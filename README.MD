@@ -5,14 +5,15 @@ A standalone ESP32-based transit departure display that fetches real-time depart
 ## Features
 
 - **Direct API Access**: Fetches departure data from Golemio PID API every 30 seconds (configurable)
+- **Multi-Stop Support**: Query multiple stops simultaneously, automatically sorted by departure time
 - **WiFi Setup Portal**: Automatic AP mode with captive portal when WiFi fails - no code editing needed!
 - **Web Configuration**: Easy setup via built-in web interface
 - **Persistent Settings**: Configuration stored in ESP32 flash memory, survives reboots
-- **Full Czech Character Support**: 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion for perfect display of Czech station names (ž, š, č, ř, etc.)
+- **Full Czech Character Support**: Custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion for perfect display of Czech station names (ž, š, č, ř, ň, ť, ď, etc.)
 - **Smart Filtering**: Configurable minimum departure time (default 3 minutes) to hide departures that are too soon to catch
 - **Real-time Updates**: Shows line number, destination, and ETA in minutes
 - **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles
-- **Color-coded Lines**: Different colors for metro, tram, bus, and night lines with automatic text color adjustment for readability
+- **Color-coded Lines**: Colored line numbers on black backgrounds for high contrast and readability
 
 ## Hardware
 
@@ -104,7 +105,10 @@ The built-in web server provides:
 └────────────────────────────────────┘
 ```
 
-**Note**: Line numbers are automatically centered within their colored backgrounds, and text color (black/white) is chosen based on background brightness for optimal readability.
+**Visual Design**:
+- Line numbers displayed in their route color (green, yellow, red, etc.) on black background rectangles
+- Text is horizontally centered and vertically baseline-aligned with destinations
+- High contrast design optimized for LED matrix visibility
 
 ### AP Setup Mode
 ```
@@ -178,9 +182,133 @@ The device implements captive portal detection for:
 - Configuration stored in NVS flash
 - Typical free heap: ~200KB
 
+### Multi-Stop Behavior
+When multiple stop IDs are configured (comma-separated), the system:
+1. Queries each stop individually via separate API calls
+2. Collects all departures (up to 30 total)
+3. Sorts by ETA (earliest departures first)
+4. Applies minimum departure time filter
+5. Displays the top N results (configurable 1-6)
+
+This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from.
+
+## Czech Character Support
+
+This project implements full support for Czech diacritical characters using a custom 8-bit font system.
+
+### The Problem
+Standard Adafruit GFX fonts use 7-bit encoding (ASCII 0x20-0x7E), which doesn't include Czech characters like **ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý**. The Golemio API returns station names in UTF-8 encoding (e.g., "Nádraží Hostivař", "Karlovo náměstí").
+
+### The Solution
+We use **8-bit ISO-8859-2 fonts** with automatic UTF-8 conversion:
+
+1. **Custom Fonts**: Generated from TrueType fonts using `fontconvert8` tool
+   - Character range: 0x20-0xDF (192 printable characters)
+   - Includes full Latin Extended-A for Central European languages
+   - Stored as Adafruit GFX format in PROGMEM
+
+2. **UTF-8 Decoder**: Converts multi-byte UTF-8 to Unicode code points (RFC 3629)
+   - Located in `src/decodeutf8.cpp/h`
+
+3. **ISO-8859-2 Mapper**: Maps Unicode to ISO-8859-2 with GFX encoding
+   - Characters 0xA0-0xFF are shifted by -32 to fit in 0x80-0xDF range
+   - Located in `src/gfxlatin2.cpp/h`
+   - In-place conversion using `utf8tocp(char* str)` function
+
+**Example conversion**:
+```
+UTF-8: "Nádraží"    → Bytes: 0x4E 0xC3 0xA1 0x64 0x72 0x61 0xC5 0xBE 0xC3 0xAD
+                     ↓ decode UTF-8
+Unicode: N á d r a ž í → Code points: U+004E U+00E1 U+0064 U+0072 U+0061 U+017E U+00ED
+                     ↓ map to ISO-8859-2 with shift
+ISO-8859-2: 0x4E 0xC1 0x64 0x72 0x61 0xBE 0xCD → Display correctly on LED matrix
+```
+
+**Credit**: Based on work by [Michel Deslierres](https://sigmdel.ca/michel/program/misc/gfxfont_8bit_en.html) and adapted from [Petr Brouzda's fontconvert8-iso8859-2](https://github.com/petrbrouzda/fontconvert8-iso8859-2).
+
+## Creating Custom Fonts
+
+To create your own 8-bit ISO-8859-2 fonts:
+
+### Prerequisites
+- TrueFont (.ttf) or OpenType (.otf) font file
+- Modified fontconvert8 tool (works on Mac M-series)
+
+### Using fontconvert8-iso8859-2
+
+The [fontconvert8-iso8859-2](https://github.com/petrbrouzda/fontconvert8-iso8859-2) repository contains the necessary tools with modifications for macOS compatibility.
+
+**Basic usage**:
+```bash
+# Clone the tool repository
+git clone https://github.com/petrbrouzda/fontconvert8-iso8859-2.git
+cd fontconvert8-iso8859-2/fontconvert8
+
+# Build the tool (may need modifications for M-series Macs)
+make
+
+# Convert a font
+./fontconvert YourFont.ttf 12 > YourFont12pt8b.h
+```
+
+**Font naming convention**: `FontName[size]pt8b.h`
+- `8b` = 8-bit encoding
+- Size = point size
+
+### Integration Steps
+
+1. **Generate the font file** with fontconvert8
+2. **Copy to `/fonts` directory** in your project
+3. **Include in `main.cpp`**:
+   ```cpp
+   #include "../fonts/YourFont12pt8b.h"
+   ```
+4. **Set as active font**:
+   ```cpp
+   const GFXfont *fontMedium = &YourFont12pt8b;
+   ```
+5. **Rebuild and flash**
+
+### Mac M-Series Compatibility
+The original fontconvert8 tool may require modifications to compile on Apple Silicon. The fork used in this project includes necessary adjustments for ARM64 architecture. If you encounter build issues, you may need to:
+- Update Makefile compiler flags
+- Install FreeType2 via Homebrew (`brew install freetype`)
+- Adjust include paths for ARM architecture
+
+### Fine-Tuning with GFX Font Customiser
+
+After generating fonts with fontconvert8, you can fine-tune individual characters using the [Adafruit GFX Font Customiser](https://tchapi.github.io/Adafruit-GFX-Font-Customiser/).
+
+This web-based tool allows you to:
+- **Visualize** the generated font in a browser
+- **Edit individual glyphs** pixel by pixel
+- **Adjust spacing** and kerning
+- **Add or modify characters** not in the original font
+- **Export** the modified font as a .h file
+
+**Workflow**:
+1. Generate base font with fontconvert8
+2. Open the .h file in the GFX Font Customiser
+3. Make visual adjustments to improve readability on LED matrix
+4. Export and replace the original .h file
+
+The fonts in this project (DepartureMono4pt8b, DepartureMono5pt8b) were customized using this tool to optimize character spacing and appearance on the 128×32 LED matrix display.
+
 ## License
 
-MIT License - Feel free to modify and share!
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+
+This means you are free to:
+- ✅ Use this code for personal or commercial purposes
+- ✅ Modify and distribute the code
+- ✅ Create derivative works
+
+**However, you must**:
+- 📝 Disclose the source code of any derivative works
+- 📝 License derivative works under GPL-3.0
+- 📝 Include copyright and license notices
+
+See the LICENSE file for full details.
 
 ## Credits
 

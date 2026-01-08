@@ -291,20 +291,14 @@ void drawDeparture(int row, Departure dep)
 {
     int y = row * 8; // Each row is 8 pixels
 
-    // Draw line number background
+    // Draw line number background - always black
     uint16_t lineColor = getLineColor(dep.line);
     int bgWidth = (strlen(dep.line) > 2) ? 18 : 14;
-    display->fillRect(1, y + 1, bgWidth, 7, lineColor);
+    display->fillRect(1, y + 1, bgWidth, 7, COLOR_BLACK);
 
-    // Line number text - use black text on bright colors, white text on dark colors
-    // Bright colors: WHITE, YELLOW, GREEN, ORANGE, CYAN
-    // Dark colors: RED, BLUE, PURPLE, BLACK
-    bool isBrightColor = (lineColor == COLOR_WHITE || lineColor == COLOR_YELLOW ||
-                          lineColor == COLOR_GREEN || lineColor == COLOR_ORANGE || lineColor == COLOR_RED ||
-                          lineColor == COLOR_CYAN);
-    uint16_t textColor = isBrightColor ? COLOR_BLACK : COLOR_WHITE;
-    display->setTextColor(textColor);
-    display->setFont(fontSmall);
+    // Line number text - colored text on black background
+    display->setTextColor(lineColor);
+    display->setFont(fontMedium);
 
     // Center the line number text within the background rectangle
     int16_t x1, y1;
@@ -312,7 +306,8 @@ void drawDeparture(int row, Departure dep)
     display->getTextBounds(dep.line, 0, 0, &x1, &y1, &w, &h);
     // Account for font's left bearing offset (x1) when centering
     int textX = 1 + (bgWidth - w) / 2 - x1;
-    display->setCursor(textX, y + 6);
+    // Align baseline with destination (y + 7)
+    display->setCursor(textX, y + 7);
     display->print(dep.line);
 
     // AC indicator (asterisk before destination)
@@ -543,7 +538,55 @@ void updateDisplay()
 }
 
 // ============================================================================
-// Golemio API Call
+// String Shortening for Display
+// ============================================================================
+struct StringReplacement
+{
+    const char *search;
+    const char *replace;
+};
+
+// Common Czech words to shorten for display space
+// Note: Strings are in UTF-8 format (before conversion to ISO-8859-2)
+const StringReplacement replacements[] = {
+    {"Nádraží", "Nádr."},
+    // Add more replacements here as needed
+    // {"Sídliště", "Sídl."},
+    // {"Nemocnice", "Nem."},
+};
+const int replacementCount = sizeof(replacements) / sizeof(replacements[0]);
+
+void shortenDestination(char *destination)
+{
+    for (int i = 0; i < replacementCount; i++)
+    {
+        char *pos = strstr(destination, replacements[i].search);
+        if (pos != NULL)
+        {
+            int searchLen = strlen(replacements[i].search);
+            int replaceLen = strlen(replacements[i].replace);
+            int tailLen = strlen(pos + searchLen);
+
+            // Copy replacement
+            memcpy(pos, replacements[i].replace, replaceLen);
+            // Shift remaining text
+            memmove(pos + replaceLen, pos + searchLen, tailLen + 1); // +1 for null terminator
+        }
+    }
+}
+
+// ============================================================================
+// Departure Sorting Helper
+// ============================================================================
+int compareDepartures(const void *a, const void *b)
+{
+    Departure *depA = (Departure *)a;
+    Departure *depB = (Departure *)b;
+    return depA->eta - depB->eta; // Sort by ETA ascending
+}
+
+// ============================================================================
+// Golemio API Call - Queries each stop separately and sorts results
 // ============================================================================
 void fetchDepartures()
 {
@@ -556,163 +599,200 @@ void fetchDepartures()
     Serial.println("API: Fetching departures...");
     logMemory("api_start");
 
-    HTTPClient http;
+// Temporary array to collect all departures from all stops
+#define MAX_TEMP_DEPARTURES 30
+    Departure tempDepartures[MAX_TEMP_DEPARTURES];
+    int tempCount = 0;
 
-    // Build URL
-    char url[512];
-    snprintf(url, sizeof(url),
-             "https://api.golemio.cz/v2/pid/departureboards?ids=%s&total=%d&preferredTimezone=Europe/Prague&minutesBefore=0&minutesAfter=120",
-             config.stopIds,
-             config.numDepartures > MAX_DEPARTURES ? MAX_DEPARTURES : config.numDepartures);
+    // Parse comma-separated stop IDs
+    char stopIdsCopy[128];
+    strlcpy(stopIdsCopy, config.stopIds, sizeof(stopIdsCopy));
 
-    logTimestamp();
-    Serial.print("API URL: ");
-    Serial.println(url);
+    char *stopId = strtok(stopIdsCopy, ",");
+    bool firstStop = true;
 
-    http.begin(url);
-    http.addHeader("x-access-token", config.apiKey);
-    http.addHeader("Content-Type", "application/json");
-    http.setTimeout(10000); // 10 second timeout
-
-    int httpCode = http.GET();
-
-    logTimestamp();
-    Serial.print("API Response: ");
-    Serial.println(httpCode);
-
-    if (httpCode == HTTP_CODE_OK)
+    while (stopId != NULL && tempCount < MAX_TEMP_DEPARTURES)
     {
-        String payload = http.getString();
+        // Trim whitespace
+        while (*stopId == ' ')
+            stopId++;
 
-        // Parse JSON
-        DynamicJsonDocument doc(8192);
-        DeserializationError error = deserializeJson(doc, payload);
-
-        if (error)
+        if (strlen(stopId) == 0)
         {
-            logTimestamp();
-            Serial.print("JSON Parse Error: ");
-            Serial.println(error.c_str());
-            apiError = true;
-            strlcpy(apiErrorMsg, "JSON Parse Error", sizeof(apiErrorMsg));
+            stopId = strtok(NULL, ",");
+            continue;
+        }
+
+        logTimestamp();
+        Serial.print("API: Querying stop ");
+        Serial.println(stopId);
+
+        HTTPClient http;
+        char url[512];
+
+        // Query each stop individually with higher total to get more results
+        snprintf(url, sizeof(url),
+                 "https://api.golemio.cz/v2/pid/departureboards?ids=%s&total=%d&preferredTimezone=Europe/Prague&minutesBefore=0&minutesAfter=120",
+                 stopId,
+                 config.numDepartures > MAX_DEPARTURES ? MAX_DEPARTURES : config.numDepartures);
+
+        http.begin(url);
+        http.addHeader("x-access-token", config.apiKey);
+        http.addHeader("Content-Type", "application/json");
+        http.setTimeout(10000);
+
+        int httpCode = http.GET();
+
+        if (httpCode == HTTP_CODE_OK)
+        {
+            String payload = http.getString();
+            DynamicJsonDocument doc(8192);
+            DeserializationError error = deserializeJson(doc, payload);
+
+            if (error)
+            {
+                logTimestamp();
+                Serial.print("JSON Parse Error for stop ");
+                Serial.print(stopId);
+                Serial.print(": ");
+                Serial.println(error.c_str());
+            }
+            else
+            {
+                // Get stop name from first stop (for display)
+                if (firstStop && doc.containsKey("stops") && doc["stops"].size() > 0)
+                {
+                    const char *name = doc["stops"][0]["stop_name"];
+                    if (name)
+                    {
+                        strlcpy(stopName, name, sizeof(stopName));
+                        utf8tocp(stopName);
+                    }
+                    firstStop = false;
+                }
+
+                // Parse departures from this stop
+                if (doc.containsKey("departures"))
+                {
+                    JsonArray deps = doc["departures"];
+
+                    for (JsonObject dep : deps)
+                    {
+                        if (tempCount >= MAX_TEMP_DEPARTURES)
+                            break;
+
+                        // Route/Line info
+                        const char *line = dep["route"]["short_name"];
+                        if (line)
+                        {
+                            strlcpy(tempDepartures[tempCount].line, line, sizeof(tempDepartures[0].line));
+                        }
+                        else
+                        {
+                            tempDepartures[tempCount].line[0] = '\0';
+                        }
+
+                        // Destination/Headsign
+                        const char *headsign = dep["trip"]["headsign"];
+                        if (headsign)
+                        {
+                            strlcpy(tempDepartures[tempCount].destination, headsign, sizeof(tempDepartures[0].destination));
+                            shortenDestination(tempDepartures[tempCount].destination);  // Shorten while still UTF-8
+                            utf8tocp(tempDepartures[tempCount].destination);            // Then convert to ISO-8859-2
+                        }
+                        else
+                        {
+                            tempDepartures[tempCount].destination[0] = '\0';
+                        }
+
+                        // Calculate ETA from departure timestamp
+                        const char *timestamp = dep["departure_timestamp"]["predicted"];
+                        if (!timestamp)
+                        {
+                            timestamp = dep["departure_timestamp"]["scheduled"];
+                        }
+
+                        if (timestamp)
+                        {
+                            struct tm tm;
+                            strptime(timestamp, "%Y-%m-%dT%H:%M:%S", &tm);
+                            time_t depTime = mktime(&tm);
+                            time_t now;
+                            time(&now);
+                            int diffSec = difftime(depTime, now);
+                            tempDepartures[tempCount].eta = (diffSec > 0) ? (diffSec / 60) : 0;
+                        }
+                        else
+                        {
+                            tempDepartures[tempCount].eta = 0;
+                        }
+
+                        // Air conditioning
+                        tempDepartures[tempCount].hasAC = dep["trip"]["is_air_conditioned"] | false;
+
+                        // Delay info
+                        if (dep.containsKey("delay") && !dep["delay"].isNull())
+                        {
+                            tempDepartures[tempCount].isDelayed = true;
+                            tempDepartures[tempCount].delayMinutes = dep["delay"]["minutes"] | 0;
+                        }
+                        else
+                        {
+                            tempDepartures[tempCount].isDelayed = false;
+                            tempDepartures[tempCount].delayMinutes = 0;
+                        }
+
+                        tempCount++;
+                    }
+                }
+            }
         }
         else
         {
-            apiError = false;
+            logTimestamp();
+            Serial.print("API Error for stop ");
+            Serial.print(stopId);
+            Serial.print(": HTTP ");
+            Serial.println(httpCode);
+        }
 
-            // Get stop name from first stop
-            if (doc.containsKey("stops") && doc["stops"].size() > 0)
-            {
-                const char *name = doc["stops"][0]["stop_name"];
-                if (name)
-                {
-                    strlcpy(stopName, name, sizeof(stopName));
-                    // Convert UTF-8 to ISO-8859-2 for 8-bit GFX fonts
-                    utf8tocp(stopName);
-                }
-            }
+        http.end();
+        stopId = strtok(NULL, ",");
+    }
 
-            // Parse departures
-            if (doc.containsKey("departures"))
-            {
-                JsonArray deps = doc["departures"];
-                departureCount = 0;
+    // Sort all collected departures by ETA
+    if (tempCount > 0)
+    {
+        qsort(tempDepartures, tempCount, sizeof(Departure), compareDepartures);
 
-                for (JsonObject dep : deps)
-                {
-                    if (departureCount >= MAX_DEPARTURES)
-                        break;
+        logTimestamp();
+        Serial.print("Collected ");
+        Serial.print(tempCount);
+        Serial.println(" departures from all stops");
+    }
 
-                    // Route/Line info
-                    const char *line = dep["route"]["short_name"];
-                    if (line)
-                    {
-                        strlcpy(departures[departureCount].line, line, sizeof(departures[0].line));
-                    }
-                    else
-                    {
-                        departures[departureCount].line[0] = '\0';
-                    }
-
-                    // Destination/Headsign
-                    const char *headsign = dep["trip"]["headsign"];
-                    if (headsign)
-                    {
-                        strlcpy(departures[departureCount].destination, headsign, sizeof(departures[0].destination));
-                        // Convert UTF-8 to ISO-8859-2 for 8-bit GFX fonts
-                        utf8tocp(departures[departureCount].destination);
-                    }
-                    else
-                    {
-                        departures[departureCount].destination[0] = '\0';
-                    }
-
-                    // Calculate ETA from departure timestamp
-                    // Try predicted first, then scheduled
-                    const char *timestamp = dep["departure_timestamp"]["predicted"];
-                    if (!timestamp)
-                    {
-                        timestamp = dep["departure_timestamp"]["scheduled"];
-                    }
-
-                    if (timestamp)
-                    {
-                        // Parse ISO timestamp and calculate minutes
-                        struct tm tm;
-                        strptime(timestamp, "%Y-%m-%dT%H:%M:%S", &tm);
-                        time_t depTime = mktime(&tm);
-
-                        time_t now;
-                        time(&now);
-
-                        int diffSec = difftime(depTime, now);
-                        departures[departureCount].eta = (diffSec > 0) ? (diffSec / 60) : 0;
-                    }
-                    else
-                    {
-                        // Fallback: use delay info if available
-                        departures[departureCount].eta = 0;
-                    }
-
-                    // Air conditioning
-                    departures[departureCount].hasAC = dep["trip"]["is_air_conditioned"] | false;
-
-                    // Delay info
-                    if (dep.containsKey("delay") && !dep["delay"].isNull())
-                    {
-                        departures[departureCount].isDelayed = true;
-                        departures[departureCount].delayMinutes = dep["delay"]["minutes"] | 0;
-                    }
-                    else
-                    {
-                        departures[departureCount].isDelayed = false;
-                        departures[departureCount].delayMinutes = 0;
-                    }
-
-                    // Filter out departures below minimum time
-                    if (departures[departureCount].eta >= config.minDepartureTime)
-                    {
-                        departureCount++;
-                    }
-                }
-
-                logTimestamp();
-                Serial.print("Parsed ");
-                Serial.print(departureCount);
-                Serial.println(" departures");
-            }
+    // Filter by minimum departure time and copy to final array
+    departureCount = 0;
+    for (int i = 0; i < tempCount && departureCount < MAX_DEPARTURES; i++)
+    {
+        if (tempDepartures[i].eta >= config.minDepartureTime)
+        {
+            departures[departureCount] = tempDepartures[i];
+            departureCount++;
         }
     }
-    else
+
+    logTimestamp();
+    Serial.print("Final departures after filtering: ");
+    Serial.println(departureCount);
+
+    // Set API error status
+    apiError = (tempCount == 0);
+    if (apiError)
     {
-        apiError = true;
-        snprintf(apiErrorMsg, sizeof(apiErrorMsg), "HTTP %d", httpCode);
-        logTimestamp();
-        Serial.print("API Error: HTTP ");
-        Serial.println(httpCode);
+        strlcpy(apiErrorMsg, "No departures", sizeof(apiErrorMsg));
     }
 
-    http.end();
     needsDisplayUpdate = true;
     logMemory("api_complete");
 }
