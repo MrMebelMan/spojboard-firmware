@@ -10,7 +10,9 @@ ESP32-based transit departure display that fetches real-time data from Prague's 
 - Standalone operation with direct API access
 - WiFi captive portal for configuration
 - Persistent settings in ESP32 NVS flash
-- Custom Adafruit GFXfonts with Extended Latin for Czech character support
+- Custom 8-bit ISO-8859-2 GFXfonts with full Czech character support
+- UTF-8 to ISO-8859-2 automatic conversion for API data
+- Configurable minimum departure time filter
 - Web-based configuration interface
 
 ## Build & Development Commands
@@ -76,13 +78,16 @@ Transitions:
 
 - **Row-based layout**: 4 rows × 8 pixels each on 128×32 matrix
   - Rows 0-2: Departure entries (line number, destination, ETA)
-  - Row 3: Date/time status bar
+  - Row 3: Date/time status bar with comma separator (e.g., "Mon, Feb 15 14:35")
 - **Color coding**: Line numbers have dedicated colors (Metro A=green, B=yellow, C=red, etc.)
-- **Custom GFXfonts**:
-  - `Ubuntu_Regular7pt7b` (small font) for compact text, line numbers, status
-  - `Ubuntu_Regular10pt7b` (medium font) for destinations, larger text
-  - Both include Extended Latin character set (Czech diacritics: ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý)
+- **Smart text colors**: Automatically uses black text on bright backgrounds (white, yellow, green, orange, cyan, red) and white text on dark backgrounds (blue, purple, black)
+- **Centered line numbers**: Text is dynamically centered within background rectangles using `getTextBounds()` with proper x1 offset compensation
+- **Custom 8-bit ISO-8859-2 GFXfonts**:
+  - `DepartureMono4pt8b` (small font) - Used for compact text, line numbers, status
+  - `DepartureMono5pt8b` (medium font) - Used for destinations, larger text
+  - Full ISO-8859-2 character set (0x20-0xDF) including all Czech diacritics
   - Located in `/fonts` directory
+- **UTF-8 Conversion**: API responses in UTF-8 are automatically converted to ISO-8859-2 encoding using in-place conversion (`utf8tocp()`)
 - **Non-blocking updates**: `isDrawing` flag prevents concurrent display access
 
 ### Memory Management
@@ -148,11 +153,12 @@ NVS namespace: "transport"
 - `wifiPass` (String)
 - `apiKey` (String)
 - `stopIds` (String, comma-separated)
-- `refresh` (Int, seconds)
+- `refresh` (Int, seconds, 10-300)
 - `numDeps` (Int, 1-6)
+- `minDepTime` (Int, minutes, 0-30) - Filter out departures below this time
 - `configured` (Bool)
 
-Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, 30s refresh, 3 departures
+Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, 30s refresh, 3 departures, 3min minimum departure time
 
 ## Time Handling
 
@@ -163,34 +169,49 @@ Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, 30s refresh, 3 departure
 
 ## Font System
 
-### Custom GFXfonts (Adafruit GFX Format)
+### Custom 8-bit ISO-8859-2 GFXfonts
 
 Located in `/fonts` directory:
-- `Ubuntu7pt7b.h` - 7pt Ubuntu Regular font (~162 lines, ~1.3KB)
-- `Ubuntu10pt7b.h` - 10pt Ubuntu Regular font (~219 lines, ~2KB)
+- **8-bit fonts (ISO-8859-2 encoding)**:
+  - `DepartureMono4pt8b.h` - Small font (4pt)
+  - `DepartureMono5pt8b.h` - Medium font (5pt)
+  - Character range: 0x20-0xDF (192 printable characters)
+  - Full ISO-8859-2 support for Czech, Slovak, Polish, Hungarian, etc.
 
-**Character Set:**
-- ASCII printable characters (0x20-0x7E)
-- Extended Latin for Czech support including: ž š č ř ň ť ď ú ů á é í ó ý (and uppercase)
+**UTF-8 Conversion System:**
+Located in `/src` directory:
+- `decodeutf8.cpp/h` - UTF-8 decoder (based on RFC 3629)
+- `gfxlatin2.cpp/h` - Converts UTF-8 to ISO-8859-2 with GFX encoding (characters 0xA0-0xFF shifted to 0x80-0xDF)
 
 **Usage in Code:**
 ```cpp
-#include "../fonts/Ubuntu7pt7b.h"
-#include "../fonts/Ubuntu10pt7b.h"
+#include "../fonts/DepartureMono5pt8b.h"
+#include "gfxlatin2.h"
 
-const GFXfont* fontSmall = &Ubuntu_Regular7pt7b;
-const GFXfont* fontMedium = &Ubuntu_Regular10pt7b;
+const GFXfont* fontMedium = &DepartureMono5pt8b;
 
-display->setFont(fontSmall);
+// Get UTF-8 string from API
+char destination[32];
+strlcpy(destination, "Nádraží Hostivař", sizeof(destination));
+
+// Convert to ISO-8859-2 (in-place)
+utf8tocp(destination);
+
+// Display with proper Czech characters
+display->setFont(fontMedium);
 display->setTextColor(COLOR_WHITE);
 display->setCursor(x, y);
-display->print("Příjezd");
+display->print(destination);  // Correctly shows "ř" and other diacritics
 ```
 
 **Font API (Adafruit GFX):**
 - `display->setFont(const GFXfont*)` - Switch font
 - `display->setTextColor(uint16_t)` - Set foreground color (transparent background)
 - `display->setCursor(int16_t x, int16_t y)` - Position cursor
+- `display->getTextBounds(const char*, int16_t, int16_t, int16_t*, int16_t*, uint16_t*, uint16_t*)` - Measure text dimensions
 - `display->print(const char*)` - Render text
 
 All fonts are stored in PROGMEM to save RAM.
+
+**Font Generation:**
+8-bit fonts are generated using the [fontconvert8-iso8859-2](https://github.com/petrbrouzda/fontconvert8-iso8859-2) tool with ISO-8859-2 encoding, which shifts extended characters (0xA0-0xFF) by -32 to fit in the 0x80-0xDF range, allowing full 8-bit character coverage.

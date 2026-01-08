@@ -7,9 +7,13 @@
 #include <ArduinoJson.h>
 #include <time.h>
 
-// Custom fonts with Extended Latin/Czech support
-#include "../fonts/Ubuntu7pt7b.h"
-#include "../fonts/Ubuntu10pt7b.h"
+// Custom 8-bit fonts with full ISO-8859-2 support for Czech characters
+#include "../fonts/DepartureMono4pt8b.h"
+#include "../fonts/DepartureMono5pt8b.h"
+
+// UTF-8 to ISO-8859-2 conversion for Czech characters
+#include "decodeutf8.h"
+#include "gfxlatin2.h"
 
 // ============================================================================
 // Configuration - Edit these for initial setup (can be changed via web UI)
@@ -22,7 +26,7 @@
 // ============================================================================
 #define PANEL_WIDTH 64
 #define PANEL_HEIGHT 32
-#define PANELS_NUMBER 2  // 128x32 total
+#define PANELS_NUMBER 2 // 128x32 total
 
 // Pin Mapping for Adafruit MatrixPortal ESP32-S3
 #define R1_PIN 42
@@ -49,20 +53,22 @@ MatrixPanel_I2S_DMA *display = nullptr;
 WebServer server(80);
 Preferences preferences;
 
-// Font references
-const GFXfont* fontSmall = &Ubuntu_Regular7pt7b;   // Replaces u8g2_font_5x7_tf
-const GFXfont* fontMedium = &Ubuntu_Regular10pt7b; // Replaces u8g2_font_6x10_tf
+// Font references - Using 8-bit fonts for full Czech character support
+const GFXfont *fontSmall = &DepartureMono_Regular4pt8b;  // 8-bit font with ISO-8859-2 encoding
+const GFXfont *fontMedium = &DepartureMono_Regular5pt8b; // 8-bit font with ISO-8859-2 encoding
 
 // ============================================================================
 // Configuration Storage
 // ============================================================================
-struct Config {
+struct Config
+{
     char wifiSsid[64];
     char wifiPassword[64];
-    char apiKey[256];
-    char stopIds[128];      // Comma-separated stop IDs (e.g., "U693Z2P,U693Z1P")
-    int refreshInterval;    // Seconds between API calls
-    int numDepartures;      // Number of departures to fetch
+    char apiKey[300];
+    char stopIds[128];    // Comma-separated stop IDs (e.g., "U693Z2P,U693Z1P")
+    int refreshInterval;  // Seconds between API calls
+    int numDepartures;    // Number of departures to fetch
+    int minDepartureTime; // Minimum departure time in minutes (filter out departures < this)
     bool configured;
 };
 
@@ -71,13 +77,14 @@ Config config;
 // ============================================================================
 // Departure Data
 // ============================================================================
-struct Departure {
-    char line[8];           // Line number (e.g., "31", "A", "S9")
-    char destination[32];   // Destination/headsign
-    int eta;                // Minutes until departure
-    bool hasAC;             // Air conditioning
-    bool isDelayed;         // Has delay
-    int delayMinutes;       // Delay in minutes
+struct Departure
+{
+    char line[8];         // Line number (e.g., "31", "A", "S9")
+    char destination[32]; // Destination/headsign
+    int eta;              // Minutes until departure
+    bool hasAC;           // Air conditioning
+    bool isDelayed;       // Has delay
+    int delayMinutes;     // Delay in minutes
 };
 
 #define MAX_DEPARTURES 6
@@ -101,7 +108,7 @@ char stopName[64] = "";
 #define AP_SSID_PREFIX "TransportDisplay-"
 #define WIFI_CONNECT_ATTEMPTS 20
 char apSSID[32];
-char apPassword[9];  // 8 chars + null
+char apPassword[9]; // 8 chars + null
 
 // DNS Server for captive portal
 #include <DNSServer.h>
@@ -126,19 +133,21 @@ uint16_t COLOR_CYAN;
 // ============================================================================
 struct tm timeinfo;
 const char *ntpServer = "pool.ntp.org";
-const long gmtOffset_sec = 3600;      // CET = UTC+1
-const int daylightOffset_sec = 3600;  // CEST = UTC+2
+const long gmtOffset_sec = 3600;     // CET = UTC+1
+const int daylightOffset_sec = 3600; // CEST = UTC+2
 
 // ============================================================================
 // Debug Logging
 // ============================================================================
-void logTimestamp() {
+void logTimestamp()
+{
     char timestamp[24];
     sprintf(timestamp, "[%010lu] ", millis());
     Serial.print(timestamp);
 }
 
-void logMemory(const char* location) {
+void logMemory(const char *location)
+{
     logTimestamp();
     Serial.print("MEM@");
     Serial.print(location);
@@ -151,40 +160,49 @@ void logMemory(const char* location) {
 // ============================================================================
 // Configuration Management
 // ============================================================================
-void loadConfig() {
-    preferences.begin("transport", true);  // Read-only
-    
+void loadConfig()
+{
+    preferences.begin("transport", true); // Read-only
+
     strlcpy(config.wifiSsid, preferences.getString("wifiSsid", DEFAULT_WIFI_SSID).c_str(), sizeof(config.wifiSsid));
     strlcpy(config.wifiPassword, preferences.getString("wifiPass", DEFAULT_WIFI_PASSWORD).c_str(), sizeof(config.wifiPassword));
     strlcpy(config.apiKey, preferences.getString("apiKey", "").c_str(), sizeof(config.apiKey));
     strlcpy(config.stopIds, preferences.getString("stopIds", "U693Z2P").c_str(), sizeof(config.stopIds));
     config.refreshInterval = preferences.getInt("refresh", 30);
     config.numDepartures = preferences.getInt("numDeps", 3);
+    config.minDepartureTime = preferences.getInt("minDepTime", 3);
     config.configured = preferences.getBool("configured", false);
-    
+
     preferences.end();
-    
+
     logTimestamp();
     Serial.println("Config loaded:");
-    Serial.print("  SSID: "); Serial.println(config.wifiSsid);
-    Serial.print("  Stop IDs: "); Serial.println(config.stopIds);
-    Serial.print("  Refresh: "); Serial.print(config.refreshInterval); Serial.println("s");
-    Serial.print("  Configured: "); Serial.println(config.configured ? "Yes" : "No");
+    Serial.print("  SSID: ");
+    Serial.println(config.wifiSsid);
+    Serial.print("  Stop IDs: ");
+    Serial.println(config.stopIds);
+    Serial.print("  Refresh: ");
+    Serial.print(config.refreshInterval);
+    Serial.println("s");
+    Serial.print("  Configured: ");
+    Serial.println(config.configured ? "Yes" : "No");
 }
 
-void saveConfig() {
-    preferences.begin("transport", false);  // Read-write
-    
+void saveConfig()
+{
+    preferences.begin("transport", false); // Read-write
+
     preferences.putString("wifiSsid", config.wifiSsid);
     preferences.putString("wifiPass", config.wifiPassword);
     preferences.putString("apiKey", config.apiKey);
     preferences.putString("stopIds", config.stopIds);
     preferences.putInt("refresh", config.refreshInterval);
     preferences.putInt("numDeps", config.numDepartures);
+    preferences.putInt("minDepTime", config.minDepartureTime);
     preferences.putBool("configured", true);
-    
+
     preferences.end();
-    
+
     logTimestamp();
     Serial.println("Config saved");
 }
@@ -192,28 +210,29 @@ void saveConfig() {
 // ============================================================================
 // Display Setup
 // ============================================================================
-void setup_display() {
+void setup_display()
+{
     HUB75_I2S_CFG::i2s_pins _pins = {
         R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN,
         A_PIN, B_PIN, C_PIN, D_PIN, E_PIN,
-        LAT_PIN, OE_PIN, CLK_PIN
-    };
+        LAT_PIN, OE_PIN, CLK_PIN};
 
     HUB75_I2S_CFG mxconfig(
         PANEL_WIDTH,
         PANEL_HEIGHT,
         PANELS_NUMBER,
-        _pins
-    );
+        _pins);
 
     mxconfig.clkphase = false;
     mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
 
     display = new MatrixPanel_I2S_DMA(mxconfig);
 
-    if (!display->begin()) {
+    if (!display->begin())
+    {
         Serial.println("Display FAILED!");
-        while (1);
+        while (1)
+            ;
     }
 
     display->setBrightness8(90);
@@ -234,48 +253,72 @@ void setup_display() {
 // ============================================================================
 // Line Color Helper
 // ============================================================================
-uint16_t getLineColor(const char* line) {
+uint16_t getLineColor(const char *line)
+{
     // Metro lines
-    if (strcmp(line, "A") == 0) return COLOR_GREEN;
-    if (strcmp(line, "B") == 0) return COLOR_YELLOW;
-    if (strcmp(line, "C") == 0) return COLOR_RED;
-    
+    if (strcmp(line, "A") == 0)
+        return COLOR_GREEN;
+    if (strcmp(line, "B") == 0)
+        return COLOR_YELLOW;
+    if (strcmp(line, "C") == 0)
+        return COLOR_RED;
+
     // Tram lines
-    if (strcmp(line, "8") == 0) return COLOR_RED;
-    if (strcmp(line, "7") == 0) return COLOR_ORANGE;
-    if (strcmp(line, "12") == 0) return COLOR_PURPLE;
-    if (strcmp(line, "31") == 0) return COLOR_GREEN;
-    
+    if (strcmp(line, "8") == 0)
+        return COLOR_RED;
+    if (strcmp(line, "7") == 0)
+        return COLOR_ORANGE;
+    if (strcmp(line, "12") == 0)
+        return COLOR_PURPLE;
+    if (strcmp(line, "31") == 0)
+        return COLOR_GREEN;
+
     // S-trains
-    if (line[0] == 'S') return COLOR_BLUE;
-    
+    if (line[0] == 'S')
+        return COLOR_BLUE;
+
     // Night lines
-    if (line[0] == '9' && strlen(line) <= 2) return COLOR_CYAN;  // Night trams 91-99
-    
-    return COLOR_YELLOW;  // Default
+    if (line[0] == '9' && strlen(line) <= 2)
+        return COLOR_CYAN; // Night trams 91-99
+
+    return COLOR_YELLOW; // Default
 }
 
 // ============================================================================
 // Draw Departure Row
 // ============================================================================
-void drawDeparture(int row, Departure dep) {
-    int y = row * 8;  // Each row is 8 pixels
+void drawDeparture(int row, Departure dep)
+{
+    int y = row * 8; // Each row is 8 pixels
 
     // Draw line number background
     uint16_t lineColor = getLineColor(dep.line);
     int bgWidth = (strlen(dep.line) > 2) ? 18 : 14;
-    display->fillRect(1, y + 1, bgWidth, 6, lineColor);
+    display->fillRect(1, y + 1, bgWidth, 7, lineColor);
 
-    // Line number text
-    uint16_t textColor = (lineColor == COLOR_YELLOW || lineColor == COLOR_CYAN) ? COLOR_BLACK : COLOR_WHITE;
+    // Line number text - use black text on bright colors, white text on dark colors
+    // Bright colors: WHITE, YELLOW, GREEN, ORANGE, CYAN
+    // Dark colors: RED, BLUE, PURPLE, BLACK
+    bool isBrightColor = (lineColor == COLOR_WHITE || lineColor == COLOR_YELLOW ||
+                          lineColor == COLOR_GREEN || lineColor == COLOR_ORANGE || lineColor == COLOR_RED ||
+                          lineColor == COLOR_CYAN);
+    uint16_t textColor = isBrightColor ? COLOR_BLACK : COLOR_WHITE;
     display->setTextColor(textColor);
     display->setFont(fontSmall);
-    display->setCursor(3, y + 7);
+
+    // Center the line number text within the background rectangle
+    int16_t x1, y1;
+    uint16_t w, h;
+    display->getTextBounds(dep.line, 0, 0, &x1, &y1, &w, &h);
+    // Account for font's left bearing offset (x1) when centering
+    int textX = 1 + (bgWidth - w) / 2 - x1;
+    display->setCursor(textX, y + 6);
     display->print(dep.line);
 
     // AC indicator (asterisk before destination)
     int destX = bgWidth + 4;
-    if (dep.hasAC) {
+    if (dep.hasAC)
+    {
         display->setTextColor(COLOR_CYAN);
         display->setCursor(destX, y + 7);
         display->print("*");
@@ -286,7 +329,7 @@ void drawDeparture(int row, Departure dep) {
     display->setTextColor(COLOR_WHITE);
     display->setFont(fontMedium);
     display->setCursor(destX, y + 7);
-    
+
     // Truncate destination if too long
     char destTrunc[20];
     int maxChars = dep.hasAC ? 14 : 15;
@@ -296,35 +339,51 @@ void drawDeparture(int row, Departure dep) {
 
     // ETA display
     int etaCursor = 111;
-    if (dep.eta >= 100) {
+    if (dep.eta >= 100)
+    {
         etaCursor = 105;
-    } else if (dep.eta >= 10) {
+    }
+    else if (dep.eta >= 10)
+    {
         etaCursor = 111;
-    } else {
+    }
+    else
+    {
         etaCursor = 117;
     }
-    
+
     display->setCursor(etaCursor, y + 7);
 
     // Color based on ETA
-    if (dep.eta < 2) {
+    if (dep.eta < 2)
+    {
         display->setTextColor(COLOR_RED);
-    } else if (dep.eta < 5) {
+    }
+    else if (dep.eta < 5)
+    {
         display->setTextColor(COLOR_YELLOW);
-    } else {
+    }
+    else
+    {
         display->setTextColor(COLOR_WHITE);
     }
 
     // Show delay indicator
-    if (dep.isDelayed && dep.delayMinutes > 0) {
+    if (dep.isDelayed && dep.delayMinutes > 0)
+    {
         display->setTextColor(COLOR_ORANGE);
     }
 
-    if (dep.eta < 1) {
+    if (dep.eta < 1)
+    {
         display->print("<1'");
-    } else if (dep.eta >= 60) {
+    }
+    else if (dep.eta >= 60)
+    {
         display->print(">1h");
-    } else {
+    }
+    else
+    {
         display->print(dep.eta);
         display->print("'");
     }
@@ -333,10 +392,12 @@ void drawDeparture(int row, Departure dep) {
 // ============================================================================
 // Draw Date/Time Row
 // ============================================================================
-void drawDateTime() {
-    int y = 24;  // Bottom row
+void drawDateTime()
+{
+    int y = 24; // Bottom row
 
-    if (!getLocalTime(&timeinfo)) {
+    if (!getLocalTime(&timeinfo))
+    {
         display->setTextColor(COLOR_RED);
         display->setFont(fontSmall);
         display->setCursor(2, y + 7);
@@ -348,14 +409,16 @@ void drawDateTime() {
     display->setTextColor(COLOR_WHITE);
 
     // Day of week
-    char dayStr[4];
-    strftime(dayStr, 4, "%a", &timeinfo);
+    char dayStr[5];
+    strftime(dayStr, 5, "%a,", &timeinfo);
+    utf8tocp(dayStr); // Convert Czech day names
     display->setCursor(2, y + 7);
     display->print(dayStr);
 
     // Date
     char dateStr[7];
     strftime(dateStr, 7, "%b %d", &timeinfo);
+    utf8tocp(dateStr); // Convert Czech month names
     display->setCursor(22, y + 7);
     display->print(dateStr);
 
@@ -369,16 +432,19 @@ void drawDateTime() {
 // ============================================================================
 // Draw Status Screen
 // ============================================================================
-void drawStatus(const char* line1, const char* line2, uint16_t color) {
+void drawStatus(const char *line1, const char *line2, uint16_t color)
+{
     display->clearScreen();
     display->setTextColor(color);
     display->setFont(fontMedium);
 
-    if (line1) {
+    if (line1)
+    {
         display->setCursor(2, 12);
         display->print(line1);
     }
-    if (line2) {
+    if (line2)
+    {
         display->setCursor(2, 24);
         display->print(line2);
     }
@@ -387,15 +453,18 @@ void drawStatus(const char* line1, const char* line2, uint16_t color) {
 // ============================================================================
 // Update Display
 // ============================================================================
-void updateDisplay() {
-    if (isDrawing) return;
-    
+void updateDisplay()
+{
+    if (isDrawing)
+        return;
+
     isDrawing = true;
     display->clearScreen();
     delay(1);
 
     // AP Mode - Show credentials
-    if (apModeActive) {
+    if (apModeActive)
+    {
         display->setFont(fontSmall);
 
         // Title
@@ -428,13 +497,15 @@ void updateDisplay() {
         return;
     }
 
-    if (!wifiConnected) {
+    if (!wifiConnected)
+    {
         drawStatus("WiFi Connecting...", config.wifiSsid, COLOR_YELLOW);
         isDrawing = false;
         return;
     }
 
-    if (!config.configured || strlen(config.apiKey) == 0) {
+    if (!config.configured || strlen(config.apiKey) == 0)
+    {
         char ipStr[32];
         sprintf(ipStr, "http://%s", WiFi.localIP().toString().c_str());
         drawStatus("Setup Required", ipStr, COLOR_CYAN);
@@ -442,14 +513,16 @@ void updateDisplay() {
         return;
     }
 
-    if (apiError) {
+    if (apiError)
+    {
         drawStatus("API Error", apiErrorMsg, COLOR_RED);
         drawDateTime();
         isDrawing = false;
         return;
     }
 
-    if (departureCount == 0) {
+    if (departureCount == 0)
+    {
         drawStatus("No Departures", stopName[0] ? stopName : "Waiting...", COLOR_YELLOW);
         drawDateTime();
         isDrawing = false;
@@ -457,22 +530,25 @@ void updateDisplay() {
     }
 
     // Draw departures (top 3 rows)
-    for (int i = 0; i < departureCount && i < 3; i++) {
+    for (int i = 0; i < departureCount && i < 3; i++)
+    {
         drawDeparture(i, departures[i]);
         delay(1);
     }
 
     drawDateTime();
     delay(1);
-    
+
     isDrawing = false;
 }
 
 // ============================================================================
 // Golemio API Call
 // ============================================================================
-void fetchDepartures() {
-    if (!wifiConnected || strlen(config.apiKey) == 0 || strlen(config.stopIds) == 0) {
+void fetchDepartures()
+{
+    if (!wifiConnected || strlen(config.apiKey) == 0 || strlen(config.stopIds) == 0)
+    {
         return;
     }
 
@@ -481,14 +557,13 @@ void fetchDepartures() {
     logMemory("api_start");
 
     HTTPClient http;
-    
+
     // Build URL
     char url[512];
     snprintf(url, sizeof(url),
-        "https://api.golemio.cz/v2/pid/departureboards?ids=%s&total=%d&preferredTimezone=Europe/Prague&minutesBefore=0&minutesAfter=120",
-        config.stopIds,
-        config.numDepartures > MAX_DEPARTURES ? MAX_DEPARTURES : config.numDepartures
-    );
+             "https://api.golemio.cz/v2/pid/departureboards?ids=%s&total=%d&preferredTimezone=Europe/Prague&minutesBefore=0&minutesAfter=120",
+             config.stopIds,
+             config.numDepartures > MAX_DEPARTURES ? MAX_DEPARTURES : config.numDepartures);
 
     logTimestamp();
     Serial.print("API URL: ");
@@ -497,81 +572,104 @@ void fetchDepartures() {
     http.begin(url);
     http.addHeader("x-access-token", config.apiKey);
     http.addHeader("Content-Type", "application/json");
-    http.setTimeout(10000);  // 10 second timeout
+    http.setTimeout(10000); // 10 second timeout
 
     int httpCode = http.GET();
-    
+
     logTimestamp();
     Serial.print("API Response: ");
     Serial.println(httpCode);
 
-    if (httpCode == HTTP_CODE_OK) {
+    if (httpCode == HTTP_CODE_OK)
+    {
         String payload = http.getString();
-        
+
         // Parse JSON
         DynamicJsonDocument doc(8192);
         DeserializationError error = deserializeJson(doc, payload);
 
-        if (error) {
+        if (error)
+        {
             logTimestamp();
             Serial.print("JSON Parse Error: ");
             Serial.println(error.c_str());
             apiError = true;
             strlcpy(apiErrorMsg, "JSON Parse Error", sizeof(apiErrorMsg));
-        } else {
+        }
+        else
+        {
             apiError = false;
-            
+
             // Get stop name from first stop
-            if (doc.containsKey("stops") && doc["stops"].size() > 0) {
-                const char* name = doc["stops"][0]["stop_name"];
-                if (name) {
+            if (doc.containsKey("stops") && doc["stops"].size() > 0)
+            {
+                const char *name = doc["stops"][0]["stop_name"];
+                if (name)
+                {
                     strlcpy(stopName, name, sizeof(stopName));
+                    // Convert UTF-8 to ISO-8859-2 for 8-bit GFX fonts
+                    utf8tocp(stopName);
                 }
             }
 
             // Parse departures
-            if (doc.containsKey("departures")) {
+            if (doc.containsKey("departures"))
+            {
                 JsonArray deps = doc["departures"];
                 departureCount = 0;
 
-                for (JsonObject dep : deps) {
-                    if (departureCount >= MAX_DEPARTURES) break;
+                for (JsonObject dep : deps)
+                {
+                    if (departureCount >= MAX_DEPARTURES)
+                        break;
 
                     // Route/Line info
-                    const char* line = dep["route"]["short_name"];
-                    if (line) {
+                    const char *line = dep["route"]["short_name"];
+                    if (line)
+                    {
                         strlcpy(departures[departureCount].line, line, sizeof(departures[0].line));
-                    } else {
+                    }
+                    else
+                    {
                         departures[departureCount].line[0] = '\0';
                     }
 
                     // Destination/Headsign
-                    const char* headsign = dep["trip"]["headsign"];
-                    if (headsign) {
+                    const char *headsign = dep["trip"]["headsign"];
+                    if (headsign)
+                    {
                         strlcpy(departures[departureCount].destination, headsign, sizeof(departures[0].destination));
-                    } else {
+                        // Convert UTF-8 to ISO-8859-2 for 8-bit GFX fonts
+                        utf8tocp(departures[departureCount].destination);
+                    }
+                    else
+                    {
                         departures[departureCount].destination[0] = '\0';
                     }
 
                     // Calculate ETA from departure timestamp
                     // Try predicted first, then scheduled
-                    const char* timestamp = dep["departure_timestamp"]["predicted"];
-                    if (!timestamp) {
+                    const char *timestamp = dep["departure_timestamp"]["predicted"];
+                    if (!timestamp)
+                    {
                         timestamp = dep["departure_timestamp"]["scheduled"];
                     }
-                    
-                    if (timestamp) {
+
+                    if (timestamp)
+                    {
                         // Parse ISO timestamp and calculate minutes
                         struct tm tm;
                         strptime(timestamp, "%Y-%m-%dT%H:%M:%S", &tm);
                         time_t depTime = mktime(&tm);
-                        
+
                         time_t now;
                         time(&now);
-                        
+
                         int diffSec = difftime(depTime, now);
                         departures[departureCount].eta = (diffSec > 0) ? (diffSec / 60) : 0;
-                    } else {
+                    }
+                    else
+                    {
                         // Fallback: use delay info if available
                         departures[departureCount].eta = 0;
                     }
@@ -580,15 +678,22 @@ void fetchDepartures() {
                     departures[departureCount].hasAC = dep["trip"]["is_air_conditioned"] | false;
 
                     // Delay info
-                    if (dep.containsKey("delay") && !dep["delay"].isNull()) {
+                    if (dep.containsKey("delay") && !dep["delay"].isNull())
+                    {
                         departures[departureCount].isDelayed = true;
                         departures[departureCount].delayMinutes = dep["delay"]["minutes"] | 0;
-                    } else {
+                    }
+                    else
+                    {
                         departures[departureCount].isDelayed = false;
                         departures[departureCount].delayMinutes = 0;
                     }
 
-                    departureCount++;
+                    // Filter out departures below minimum time
+                    if (departures[departureCount].eta >= config.minDepartureTime)
+                    {
+                        departureCount++;
+                    }
                 }
 
                 logTimestamp();
@@ -597,7 +702,9 @@ void fetchDepartures() {
                 Serial.println(" departures");
             }
         }
-    } else {
+    }
+    else
+    {
         apiError = true;
         snprintf(apiErrorMsg, sizeof(apiErrorMsg), "HTTP %d", httpCode);
         logTimestamp();
@@ -615,7 +722,7 @@ void fetchDepartures() {
 // ============================================================================
 
 // HTML page template
-const char* HTML_HEADER = R"rawliteral(
+const char *HTML_HEADER = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -650,95 +757,120 @@ const char* HTML_HEADER = R"rawliteral(
 <body>
 )rawliteral";
 
-const char* HTML_FOOTER = "</body></html>";
+const char *HTML_FOOTER = "</body></html>";
 
-void handleRoot() {
+void handleRoot()
+{
     String html = HTML_HEADER;
     html += "<h1>🚌 Transport Display</h1>";
-    
+
     // AP Mode banner
-    if (apModeActive) {
+    if (apModeActive)
+    {
         html += "<div class='card' style='background: #ff6b6b; color: #fff;'>";
         html += "<h2 style='color: #fff; margin-top: 0;'>⚠️ Setup Mode</h2>";
         html += "<p>Device is in Access Point mode. Configure WiFi credentials below to connect to your network.</p>";
         html += "<p><strong>AP Name:</strong> " + String(apSSID) + "</p>";
         html += "</div>";
     }
-    
+
     // Status card
     html += "<div class='card'>";
     html += "<h2>Status</h2>";
-    
-    if (apModeActive) {
+
+    if (apModeActive)
+    {
         html += "<div class='status warn'>AP Mode Active - Not connected to WiFi</div>";
         html += "<p><strong>Connected clients:</strong> " + String(WiFi.softAPgetStationNum()) + "</p>";
-    } else if (wifiConnected) {
+    }
+    else if (wifiConnected)
+    {
         html += "<div class='status ok'>WiFi Connected: " + WiFi.localIP().toString() + "</div>";
-    } else {
+    }
+    else
+    {
         html += "<div class='status error'>WiFi Disconnected</div>";
     }
-    
-    if (!apModeActive) {
-        if (strlen(config.apiKey) > 0) {
-            if (apiError) {
+
+    if (!apModeActive)
+    {
+        if (strlen(config.apiKey) > 0)
+        {
+            if (apiError)
+            {
                 html += "<div class='status error'>API Error: " + String(apiErrorMsg) + "</div>";
-            } else {
+            }
+            else
+            {
                 html += "<div class='status ok'>API OK - " + String(departureCount) + " departures</div>";
             }
-        } else {
+        }
+        else
+        {
             html += "<div class='status warn'>API Key not configured</div>";
         }
-        
-        if (stopName[0]) {
+
+        if (stopName[0])
+        {
             html += "<p><strong>Stop:</strong> " + String(stopName) + "</p>";
         }
     }
-    
+
     html += "<p><strong>Free Memory:</strong> " + String(ESP.getFreeHeap()) + " bytes</p>";
     html += "</div>";
-    
+
     // Configuration form
     html += "<div class='card'>";
     html += "<h2>Configuration</h2>";
     html += "<form method='POST' action='/save'>";
-    
+
     html += "<label>WiFi SSID</label>";
     html += "<input type='text' name='ssid' value='" + String(config.wifiSsid) + "' required placeholder='Your WiFi network name'>";
-    
+
     html += "<label>WiFi Password</label>";
     html += "<input type='password' name='password' placeholder='Enter WiFi password'>";
-    if (!apModeActive) {
+    if (!apModeActive)
+    {
         html += "<p class='info'>Leave empty to keep current password</p>";
-    } else {
+    }
+    else
+    {
         html += "<p class='info'>Enter your WiFi password</p>";
     }
-    
+
     html += "<label>Golemio API Key</label>";
     html += "<input type='text' name='apikey' value='" + String(config.apiKey) + "' required placeholder='Your Golemio API key'>";
     html += "<p class='info'>Get your API key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
-    
+
     html += "<label>Stop ID(s)</label>";
     html += "<input type='text' name='stops' value='" + String(config.stopIds) + "' required placeholder='e.g., U693Z2P'>";
     html += "<p class='info'>Comma-separated PID stop IDs. Find IDs at <a href='http://data.pid.cz/stops/xml/StopsByName.xml' target='_blank'>PID data</a></p>";
-    
+
     html += "<div class='grid'>";
     html += "<div><label>Refresh Interval (sec)</label>";
     html += "<input type='number' name='refresh' value='" + String(config.refreshInterval) + "' min='10' max='300'></div>";
-    
+
     html += "<div><label>Number of Departures</label>";
     html += "<input type='number' name='numdeps' value='" + String(config.numDepartures) + "' min='1' max='6'></div>";
+
+    html += "<div><label>Min Departure Time (min)</label>";
+    html += "<input type='number' name='mindeptime' value='" + String(config.minDepartureTime) + "' min='0' max='30'></div>";
     html += "</div>";
-    
-    if (apModeActive) {
+
+    if (apModeActive)
+    {
         html += "<button type='submit'>Save & Connect to WiFi</button>";
-    } else {
+    }
+    else
+    {
         html += "<button type='submit'>Save Configuration</button>";
     }
     html += "</form>";
     html += "</div>";
-    
+
     // Actions
-    if (!apModeActive) {
+    if (!apModeActive)
+    {
         html += "<div class='card'>";
         html += "<h2>Actions</h2>";
         html += "<form method='POST' action='/refresh' style='display:inline'>";
@@ -749,47 +881,68 @@ void handleRoot() {
         html += "</form>";
         html += "</div>";
     }
-    
+
     html += HTML_FOOTER;
     server.send(200, "text/html", html);
 }
 
-void handleSave() {
+void handleSave()
+{
     bool wifiChanged = false;
-    
-    if (server.hasArg("ssid")) {
+
+    if (server.hasArg("ssid"))
+    {
         String newSsid = server.arg("ssid");
-        if (newSsid != config.wifiSsid) {
+        if (newSsid != config.wifiSsid)
+        {
             wifiChanged = true;
         }
         strlcpy(config.wifiSsid, newSsid.c_str(), sizeof(config.wifiSsid));
     }
-    if (server.hasArg("password") && server.arg("password").length() > 0) {
+    if (server.hasArg("password") && server.arg("password").length() > 0)
+    {
         strlcpy(config.wifiPassword, server.arg("password").c_str(), sizeof(config.wifiPassword));
         wifiChanged = true;
     }
-    if (server.hasArg("apikey")) {
+    if (server.hasArg("apikey"))
+    {
         strlcpy(config.apiKey, server.arg("apikey").c_str(), sizeof(config.apiKey));
     }
-    if (server.hasArg("stops")) {
+    if (server.hasArg("stops"))
+    {
         strlcpy(config.stopIds, server.arg("stops").c_str(), sizeof(config.stopIds));
     }
-    if (server.hasArg("refresh")) {
+    if (server.hasArg("refresh"))
+    {
         config.refreshInterval = server.arg("refresh").toInt();
-        if (config.refreshInterval < 10) config.refreshInterval = 10;
-        if (config.refreshInterval > 300) config.refreshInterval = 300;
+        if (config.refreshInterval < 10)
+            config.refreshInterval = 10;
+        if (config.refreshInterval > 300)
+            config.refreshInterval = 300;
     }
-    if (server.hasArg("numdeps")) {
+    if (server.hasArg("numdeps"))
+    {
         config.numDepartures = server.arg("numdeps").toInt();
-        if (config.numDepartures < 1) config.numDepartures = 1;
-        if (config.numDepartures > MAX_DEPARTURES) config.numDepartures = MAX_DEPARTURES;
+        if (config.numDepartures < 1)
+            config.numDepartures = 1;
+        if (config.numDepartures > MAX_DEPARTURES)
+            config.numDepartures = MAX_DEPARTURES;
     }
-    
+    if (server.hasArg("mindeptime"))
+    {
+        config.minDepartureTime = server.arg("mindeptime").toInt();
+        if (config.minDepartureTime < 0)
+            config.minDepartureTime = 0;
+        if (config.minDepartureTime > 30)
+            config.minDepartureTime = 30;
+    }
+
     config.configured = true;
     saveConfig();
-    
+
     // If in AP mode or WiFi changed, attempt to connect to the new network
-    if (apModeActive || wifiChanged) {
+    if (apModeActive || wifiChanged)
+    {
         String html = HTML_HEADER;
         html += "<h1>⏳ Connecting...</h1>";
         html += "<p>Attempting to connect to WiFi network: <strong>" + String(config.wifiSsid) + "</strong></p>";
@@ -800,12 +953,14 @@ void handleSave() {
         html += "</div>";
         html += HTML_FOOTER;
         server.send(200, "text/html", html);
-        
+
         delay(1000);
-        
+
         // Restart to apply new WiFi settings
         ESP.restart();
-    } else {
+    }
+    else
+    {
         // Normal save without WiFi change
         String html = HTML_HEADER;
         html += "<h1>✅ Configuration Saved</h1>";
@@ -813,19 +968,21 @@ void handleSave() {
         html += "<p><a href='/'>← Back to Dashboard</a></p>";
         html += HTML_FOOTER;
         server.send(200, "text/html", html);
-        
+
         // Trigger immediate refresh
         lastApiCall = 0;
     }
 }
 
-void handleRefresh() {
-    lastApiCall = 0;  // Force immediate refresh
+void handleRefresh()
+{
+    lastApiCall = 0; // Force immediate refresh
     server.sendHeader("Location", "/");
     server.send(302, "text/plain", "");
 }
 
-void handleReboot() {
+void handleReboot()
+{
     String html = HTML_HEADER;
     html += "<h1>🔄 Rebooting...</h1>";
     html += "<p>The device is rebooting. Please wait a few seconds.</p>";
@@ -836,12 +993,16 @@ void handleReboot() {
     ESP.restart();
 }
 
-void handleNotFound() {
+void handleNotFound()
+{
     // Captive portal redirect - redirect all unknown requests to root
-    if (apModeActive) {
+    if (apModeActive)
+    {
         server.sendHeader("Location", "http://192.168.4.1/");
         server.send(302, "text/plain", "");
-    } else {
+    }
+    else
+    {
         server.sendHeader("Location", "/");
         server.send(302, "text/plain", "");
     }
@@ -850,111 +1011,123 @@ void handleNotFound() {
 // ============================================================================
 // AP Mode Functions
 // ============================================================================
-void generateRandomPassword() {
+void generateRandomPassword()
+{
     // Generate 8-character alphanumeric password
-    const char charset[] = "abcdefghjkmnpqrstuvwxyz23456789";  // Excluded confusing chars: i,l,o,0,1
-    randomSeed(esp_random());  // Use hardware RNG
-    
-    for (int i = 0; i < 8; i++) {
+    const char charset[] = "abcdefghjkmnpqrstuvwxyz23456789"; // Excluded confusing chars: i,l,o,0,1
+    randomSeed(esp_random());                                 // Use hardware RNG
+
+    for (int i = 0; i < 8; i++)
+    {
         apPassword[i] = charset[random(0, strlen(charset))];
     }
     apPassword[8] = '\0';
 }
 
-void generateAPName() {
+void generateAPName()
+{
     // Create unique AP name using last 4 chars of MAC
     uint8_t mac[6];
     WiFi.macAddress(mac);
     snprintf(apSSID, sizeof(apSSID), "%s%02X%02X", AP_SSID_PREFIX, mac[4], mac[5]);
 }
 
-void startAPMode() {
+void startAPMode()
+{
     logTimestamp();
     Serial.println("Starting AP Mode...");
-    
+
     // Generate credentials
     generateAPName();
     generateRandomPassword();
-    
+
     // Stop any existing WiFi connection
     WiFi.disconnect(true);
     delay(100);
-    
+
     // Configure AP
     WiFi.mode(WIFI_AP);
     WiFi.softAP(apSSID, apPassword);
-    
+
     // Configure AP IP (default is 192.168.4.1)
     IPAddress apIP(192, 168, 4, 1);
     IPAddress gateway(192, 168, 4, 1);
     IPAddress subnet(255, 255, 255, 0);
     WiFi.softAPConfig(apIP, gateway, subnet);
-    
+
     // Start DNS server for captive portal (redirect all domains to AP IP)
     dnsServer.start(DNS_PORT, "*", apIP);
-    
+
     apModeActive = true;
     wifiConnected = false;
-    
+
     logTimestamp();
     Serial.println("AP Mode Active!");
-    Serial.print("  SSID: "); Serial.println(apSSID);
-    Serial.print("  Password: "); Serial.println(apPassword);
-    Serial.print("  IP: "); Serial.println(WiFi.softAPIP());
-    
+    Serial.print("  SSID: ");
+    Serial.println(apSSID);
+    Serial.print("  Password: ");
+    Serial.println(apPassword);
+    Serial.print("  IP: ");
+    Serial.println(WiFi.softAPIP());
+
     // Update display with AP credentials
     needsDisplayUpdate = true;
 }
 
-void stopAPMode() {
-    if (apModeActive) {
+void stopAPMode()
+{
+    if (apModeActive)
+    {
         logTimestamp();
         Serial.println("Stopping AP Mode...");
-        
+
         dnsServer.stop();
         WiFi.softAPdisconnect(true);
         apModeActive = false;
-        
+
         delay(100);
     }
 }
 
 // Captive portal detection endpoints
-void handleCaptivePortal() {
+void handleCaptivePortal()
+{
     server.sendHeader("Location", "http://192.168.4.1/");
     server.send(302, "text/plain", "");
 }
 
-void setupCaptivePortalHandlers() {
+void setupCaptivePortalHandlers()
+{
     // Android captive portal detection
     server.on("/generate_204", handleCaptivePortal);
     server.on("/gen_204", handleCaptivePortal);
-    
+
     // iOS/macOS captive portal detection
     server.on("/hotspot-detect.html", handleCaptivePortal);
     server.on("/library/test/success.html", handleCaptivePortal);
-    
+
     // Windows captive portal detection
     server.on("/ncsi.txt", handleCaptivePortal);
     server.on("/connecttest.txt", handleCaptivePortal);
     server.on("/redirect", handleCaptivePortal);
-    
+
     // Firefox captive portal detection
     server.on("/success.txt", handleCaptivePortal);
 }
 
-void setupWebServer() {
+void setupWebServer()
+{
     server.on("/", HTTP_GET, handleRoot);
     server.on("/save", HTTP_POST, handleSave);
     server.on("/refresh", HTTP_POST, handleRefresh);
     server.on("/reboot", HTTP_POST, handleReboot);
-    
+
     // Captive portal handlers
     setupCaptivePortalHandlers();
-    
+
     server.onNotFound(handleNotFound);
     server.begin();
-    
+
     logTimestamp();
     Serial.println("Web server started");
 }
@@ -962,52 +1135,58 @@ void setupWebServer() {
 // ============================================================================
 // WiFi Connection
 // ============================================================================
-void connectWiFi() {
+void connectWiFi()
+{
     logTimestamp();
     Serial.print("WiFi: Connecting to ");
     Serial.println(config.wifiSsid);
-    
+
     drawStatus("Connecting WiFi...", config.wifiSsid, COLOR_YELLOW);
-    
+
     WiFi.mode(WIFI_STA);
     WiFi.begin(config.wifiSsid, config.wifiPassword);
-    
+
     int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < WIFI_CONNECT_ATTEMPTS) {
+    while (WiFi.status() != WL_CONNECTED && attempts < WIFI_CONNECT_ATTEMPTS)
+    {
         delay(500);
         Serial.print(".");
-        
+
         // Update display with attempt count
-        if (attempts % 4 == 0) {
+        if (attempts % 4 == 0)
+        {
             char msg[32];
             snprintf(msg, sizeof(msg), "Attempt %d/%d", attempts + 1, WIFI_CONNECT_ATTEMPTS);
             drawStatus("Connecting WiFi...", msg, COLOR_YELLOW);
         }
-        
+
         attempts++;
     }
-    
-    if (WiFi.status() == WL_CONNECTED) {
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
         wifiConnected = true;
         apModeActive = false;
         logTimestamp();
         Serial.println("\nWiFi: Connected!");
         Serial.print("IP: ");
         Serial.println(WiFi.localIP());
-        
+
         char ipStr[32];
         sprintf(ipStr, "IP: %s", WiFi.localIP().toString().c_str());
         drawStatus("WiFi Connected!", ipStr, COLOR_GREEN);
         delay(1500);
-    } else {
+    }
+    else
+    {
         wifiConnected = false;
         logTimestamp();
         Serial.println("\nWiFi: Connection failed!");
         Serial.println("Starting AP mode for configuration...");
-        
+
         drawStatus("WiFi Failed!", "Starting AP mode...", COLOR_RED);
         delay(1500);
-        
+
         // Fall back to AP mode
         startAPMode();
     }
@@ -1016,59 +1195,64 @@ void connectWiFi() {
 // ============================================================================
 // Setup
 // ============================================================================
-void setup() {
+void setup()
+{
     Serial.begin(115200);
     delay(1000);
-    
+
     Serial.println("\n╔═══════════════════════════════════════╗");
     Serial.println("║   Transport Display - Standalone      ║");
     Serial.println("║   Golemio API Edition                 ║");
     Serial.println("╚═══════════════════════════════════════╝\n");
-    
+
     logMemory("boot");
-    
+
     // Initialize display
     setup_display();
     logMemory("display_init");
-    
+
     drawStatus("Starting...", "", COLOR_WHITE);
-    
+
     // Load configuration
     loadConfig();
-    
+
     // Connect to WiFi (will fall back to AP mode if fails)
     connectWiFi();
-    
+
     // Start web server (works in both STA and AP mode)
     setupWebServer();
-    
-    if (wifiConnected && !apModeActive) {
+
+    if (wifiConnected && !apModeActive)
+    {
         // Setup NTP time
         configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-        
+
         // Wait for time sync
         logTimestamp();
         Serial.println("Syncing time...");
         int timeAttempts = 0;
-        while (!getLocalTime(&timeinfo) && timeAttempts < 10) {
+        while (!getLocalTime(&timeinfo) && timeAttempts < 10)
+        {
             delay(500);
             timeAttempts++;
         }
-        
-        if (getLocalTime(&timeinfo)) {
+
+        if (getLocalTime(&timeinfo))
+        {
             char timeStr[32];
             strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
             logTimestamp();
             Serial.print("Time synced: ");
             Serial.println(timeStr);
         }
-        
+
         // Initial API call if configured
-        if (config.configured && strlen(config.apiKey) > 0) {
+        if (config.configured && strlen(config.apiKey) > 0)
+        {
             fetchDepartures();
         }
     }
-    
+
     needsDisplayUpdate = true;
     logTimestamp();
     Serial.println("Setup complete!\n");
@@ -1077,80 +1261,94 @@ void setup() {
 // ============================================================================
 // Main Loop
 // ============================================================================
-void loop() {
+void loop()
+{
     // Handle DNS for captive portal (AP mode only)
-    if (apModeActive) {
+    if (apModeActive)
+    {
         dnsServer.processNextRequest();
     }
-    
+
     // Handle web server requests
     server.handleClient();
-    
+
     // Skip WiFi monitoring and API calls in AP mode
-    if (apModeActive) {
+    if (apModeActive)
+    {
         // Update display periodically in AP mode
-        if (millis() - lastDisplayUpdate >= 5000) {
+        if (millis() - lastDisplayUpdate >= 5000)
+        {
             lastDisplayUpdate = millis();
             needsDisplayUpdate = true;
         }
-        
-        if (needsDisplayUpdate) {
+
+        if (needsDisplayUpdate)
+        {
             needsDisplayUpdate = false;
             updateDisplay();
         }
-        
+
         delay(10);
         return;
     }
-    
+
     // Check WiFi connection (STA mode only)
-    if (WiFi.status() != WL_CONNECTED && wifiConnected) {
+    if (WiFi.status() != WL_CONNECTED && wifiConnected)
+    {
         wifiConnected = false;
         logTimestamp();
         Serial.println("WiFi: Disconnected!");
         needsDisplayUpdate = true;
-        
+
         // Attempt reconnection
         static unsigned long lastReconnectAttempt = 0;
-        if (millis() - lastReconnectAttempt > 30000) {  // Try every 30 seconds
+        if (millis() - lastReconnectAttempt > 30000)
+        { // Try every 30 seconds
             lastReconnectAttempt = millis();
             logTimestamp();
             Serial.println("WiFi: Attempting reconnection...");
             WiFi.reconnect();
         }
-    } else if (WiFi.status() == WL_CONNECTED && !wifiConnected) {
+    }
+    else if (WiFi.status() == WL_CONNECTED && !wifiConnected)
+    {
         wifiConnected = true;
         logTimestamp();
         Serial.println("WiFi: Reconnected!");
         needsDisplayUpdate = true;
     }
-    
+
     // Periodic API calls (only when connected and not in AP mode)
-    if (wifiConnected && config.configured && strlen(config.apiKey) > 0) {
+    if (wifiConnected && config.configured && strlen(config.apiKey) > 0)
+    {
         unsigned long now = millis();
         unsigned long interval = (unsigned long)config.refreshInterval * 1000;
-        
-        if (now - lastApiCall >= interval || lastApiCall == 0) {
+
+        if (now - lastApiCall >= interval || lastApiCall == 0)
+        {
             lastApiCall = now;
             fetchDepartures();
         }
     }
-    
+
     // Update display
-    if (needsDisplayUpdate) {
+    if (needsDisplayUpdate)
+    {
         needsDisplayUpdate = false;
         updateDisplay();
     }
-    
+
     // Periodic display update (for time)
-    if (millis() - lastDisplayUpdate >= 30000) {
+    if (millis() - lastDisplayUpdate >= 30000)
+    {
         lastDisplayUpdate = millis();
         needsDisplayUpdate = true;
     }
-    
+
     // Status logging every 60 seconds
     static unsigned long lastStatusLog = 0;
-    if (millis() - lastStatusLog >= 60000) {
+    if (millis() - lastStatusLog >= 60000)
+    {
         lastStatusLog = millis();
         logTimestamp();
         Serial.print("STATUS: WiFi=");
@@ -1162,7 +1360,7 @@ void loop() {
         Serial.print(" | Heap=");
         Serial.println(ESP.getFreeHeap());
     }
-    
+
     // Let idle task run
     delay(1);
 }

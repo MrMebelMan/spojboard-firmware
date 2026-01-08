@@ -8,10 +8,11 @@ A standalone ESP32-based transit departure display that fetches real-time depart
 - **WiFi Setup Portal**: Automatic AP mode with captive portal when WiFi fails - no code editing needed!
 - **Web Configuration**: Easy setup via built-in web interface
 - **Persistent Settings**: Configuration stored in ESP32 flash memory, survives reboots
-- **Czech Character Support**: Custom GFXfonts with Extended Latin for proper display of Czech station names (ž, š, č, ř, etc.)
+- **Full Czech Character Support**: 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion for perfect display of Czech station names (ž, š, č, ř, etc.)
+- **Smart Filtering**: Configurable minimum departure time (default 3 minutes) to hide departures that are too soon to catch
 - **Real-time Updates**: Shows line number, destination, and ETA in minutes
 - **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles
-- **Color-coded Lines**: Different colors for metro, tram, bus, and night lines
+- **Color-coded Lines**: Different colors for metro, tram, bus, and night lines with automatic text color adjustment for readability
 
 ## Hardware
 
@@ -64,12 +65,13 @@ This ensures you can always access the device for reconfiguration!
 The built-in web server provides:
 
 - **Status Dashboard**: WiFi status, API status, memory usage
-- **Configuration Form**: 
+- **Configuration Form**:
   - WiFi credentials
   - Golemio API key
   - Stop ID(s) - comma-separated for multiple stops
   - Refresh interval (10-300 seconds)
-  - Number of departures to display
+  - Number of departures to display (1-6)
+  - Minimum departure time (0-30 minutes) - filter out departures too soon to catch
 - **Actions**:
   - Force refresh
   - Reboot device
@@ -96,11 +98,13 @@ The built-in web server provides:
 ```
 ┌────────────────────────────────────┐
 │ [31] Sídliště Řepy           12' │  Row 1
-│ [7 ] Radlická                 5' │  Row 2  
+│ [7 ] Radlická                 5' │  Row 2
 │ [A ] Depo Hostivař            2' │  Row 3
-│ Wed 08.Jan              14:35    │  Row 4 (Date/Time)
+│ Mon, Feb 15             14:35    │  Row 4 (Date/Time)
 └────────────────────────────────────┘
 ```
+
+**Note**: Line numbers are automatically centered within their colored backgrounds, and text color (black/white) is chosen based on background brightness for optimal readability.
 
 ### AP Setup Mode
 ```
@@ -183,4 +187,6 @@ MIT License - Feel free to modify and share!
 - [Golemio API](https://api.golemio.cz) - Prague open data platform
 - [ESP32-HUB75-MatrixPanel-DMA](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA) - Display driver
 - [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) - Graphics primitives and font rendering
-- Ubuntu font family - Custom GFXfonts with Extended Latin character support
+- [Michel Deslierres](https://sigmdel.ca/michel/program/misc/gfxfont_8bit_en.html) - Original UTF-8 to ISO-8859-2 conversion code
+- [Petr Brouzda - fontconvert8-iso8859-2](https://github.com/petrbrouzda/fontconvert8-iso8859-2) - Font conversion tool and UTF-8 conversion implementation
+- DepartureMono font family - Custom 8-bit GFXfonts with ISO-8859-2 character support
