@@ -4,9 +4,12 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
-#include <U8g2_for_Adafruit_GFX.h>
 #include <ArduinoJson.h>
 #include <time.h>
+
+// Custom fonts with Extended Latin/Czech support
+#include "../fonts/Ubuntu7pt7b.h"
+#include "../fonts/Ubuntu10pt7b.h"
 
 // ============================================================================
 // Configuration - Edit these for initial setup (can be changed via web UI)
@@ -43,9 +46,12 @@
 // Global Objects
 // ============================================================================
 MatrixPanel_I2S_DMA *display = nullptr;
-U8G2_FOR_ADAFRUIT_GFX u8g2;
 WebServer server(80);
 Preferences preferences;
+
+// Font references
+const GFXfont* fontSmall = &Ubuntu_Regular7pt7b;   // Replaces u8g2_font_5x7_tf
+const GFXfont* fontMedium = &Ubuntu_Regular10pt7b; // Replaces u8g2_font_6x10_tf
 
 // ============================================================================
 // Configuration Storage
@@ -223,11 +229,6 @@ void setup_display() {
     COLOR_PURPLE = display->color565(128, 0, 128);
     COLOR_BLACK = display->color565(0, 0, 0);
     COLOR_CYAN = display->color565(0, 255, 255);
-
-    // Initialize U8g2 for Adafruit GFX
-    u8g2.begin(*display);
-    u8g2.setFontMode(1);       // Transparent mode
-    u8g2.setFontDirection(0);  // Left to right
 }
 
 // ============================================================================
@@ -267,31 +268,31 @@ void drawDeparture(int row, Departure dep) {
 
     // Line number text
     uint16_t textColor = (lineColor == COLOR_YELLOW || lineColor == COLOR_CYAN) ? COLOR_BLACK : COLOR_WHITE;
-    u8g2.setForegroundColor(textColor);
-    u8g2.setFont(u8g2_font_5x7_tf);
-    u8g2.setCursor(3, y + 7);
-    u8g2.print(dep.line);
+    display->setTextColor(textColor);
+    display->setFont(fontSmall);
+    display->setCursor(3, y + 7);
+    display->print(dep.line);
 
     // AC indicator (asterisk before destination)
     int destX = bgWidth + 4;
     if (dep.hasAC) {
-        u8g2.setForegroundColor(COLOR_CYAN);
-        u8g2.setCursor(destX, y + 7);
-        u8g2.print("*");
+        display->setTextColor(COLOR_CYAN);
+        display->setCursor(destX, y + 7);
+        display->print("*");
         destX += 6;
     }
 
     // Destination
-    u8g2.setForegroundColor(COLOR_WHITE);
-    u8g2.setFont(u8g2_font_6x10_tf);
-    u8g2.setCursor(destX, y + 7);
+    display->setTextColor(COLOR_WHITE);
+    display->setFont(fontMedium);
+    display->setCursor(destX, y + 7);
     
     // Truncate destination if too long
     char destTrunc[20];
     int maxChars = dep.hasAC ? 14 : 15;
     strncpy(destTrunc, dep.destination, maxChars);
     destTrunc[maxChars] = '\0';
-    u8g2.print(destTrunc);
+    display->print(destTrunc);
 
     // ETA display
     int etaCursor = 111;
@@ -303,29 +304,29 @@ void drawDeparture(int row, Departure dep) {
         etaCursor = 117;
     }
     
-    u8g2.setCursor(etaCursor, y + 7);
+    display->setCursor(etaCursor, y + 7);
 
     // Color based on ETA
     if (dep.eta < 2) {
-        u8g2.setForegroundColor(COLOR_RED);
+        display->setTextColor(COLOR_RED);
     } else if (dep.eta < 5) {
-        u8g2.setForegroundColor(COLOR_YELLOW);
+        display->setTextColor(COLOR_YELLOW);
     } else {
-        u8g2.setForegroundColor(COLOR_WHITE);
+        display->setTextColor(COLOR_WHITE);
     }
 
     // Show delay indicator
     if (dep.isDelayed && dep.delayMinutes > 0) {
-        u8g2.setForegroundColor(COLOR_ORANGE);
+        display->setTextColor(COLOR_ORANGE);
     }
 
     if (dep.eta < 1) {
-        u8g2.print("<1'");
+        display->print("<1'");
     } else if (dep.eta >= 60) {
-        u8g2.print(">1h");
+        display->print(">1h");
     } else {
-        u8g2.print(dep.eta);
-        u8g2.print("'");
+        display->print(dep.eta);
+        display->print("'");
     }
 }
 
@@ -336,33 +337,33 @@ void drawDateTime() {
     int y = 24;  // Bottom row
 
     if (!getLocalTime(&timeinfo)) {
-        u8g2.setForegroundColor(COLOR_RED);
-        u8g2.setFont(u8g2_font_5x7_tf);
-        u8g2.setCursor(2, y + 7);
-        u8g2.print("Time Sync...");
+        display->setTextColor(COLOR_RED);
+        display->setFont(fontSmall);
+        display->setCursor(2, y + 7);
+        display->print("Time Sync...");
         return;
     }
 
-    u8g2.setFont(u8g2_font_5x7_tf);
-    u8g2.setForegroundColor(COLOR_WHITE);
+    display->setFont(fontSmall);
+    display->setTextColor(COLOR_WHITE);
 
     // Day of week
     char dayStr[4];
     strftime(dayStr, 4, "%a", &timeinfo);
-    u8g2.setCursor(2, y + 7);
-    u8g2.print(dayStr);
+    display->setCursor(2, y + 7);
+    display->print(dayStr);
 
     // Date
     char dateStr[7];
     strftime(dateStr, 7, "%b %d", &timeinfo);
-    u8g2.setCursor(22, y + 7);
-    u8g2.print(dateStr);
+    display->setCursor(22, y + 7);
+    display->print(dateStr);
 
     // Time
     char timeStr[6];
     strftime(timeStr, 6, "%H:%M", &timeinfo);
-    u8g2.setCursor(102, y + 7);
-    u8g2.print(timeStr);
+    display->setCursor(102, y + 7);
+    display->print(timeStr);
 }
 
 // ============================================================================
@@ -370,16 +371,16 @@ void drawDateTime() {
 // ============================================================================
 void drawStatus(const char* line1, const char* line2, uint16_t color) {
     display->clearScreen();
-    u8g2.setForegroundColor(color);
-    u8g2.setFont(u8g2_font_6x10_tf);
-    
+    display->setTextColor(color);
+    display->setFont(fontMedium);
+
     if (line1) {
-        u8g2.setCursor(2, 12);
-        u8g2.print(line1);
+        display->setCursor(2, 12);
+        display->print(line1);
     }
     if (line2) {
-        u8g2.setCursor(2, 24);
-        u8g2.print(line2);
+        display->setCursor(2, 24);
+        display->print(line2);
     }
 }
 
@@ -395,34 +396,34 @@ void updateDisplay() {
 
     // AP Mode - Show credentials
     if (apModeActive) {
-        u8g2.setFont(u8g2_font_5x7_tf);
-        
+        display->setFont(fontSmall);
+
         // Title
-        u8g2.setForegroundColor(COLOR_CYAN);
-        u8g2.setCursor(2, 7);
-        u8g2.print("WiFi Setup Mode");
-        
+        display->setTextColor(COLOR_CYAN);
+        display->setCursor(2, 7);
+        display->print("WiFi Setup Mode");
+
         // SSID
-        u8g2.setForegroundColor(COLOR_WHITE);
-        u8g2.setCursor(2, 15);
-        u8g2.print("SSID:");
-        u8g2.setForegroundColor(COLOR_YELLOW);
-        u8g2.setCursor(32, 15);
-        u8g2.print(apSSID);
-        
+        display->setTextColor(COLOR_WHITE);
+        display->setCursor(2, 15);
+        display->print("SSID:");
+        display->setTextColor(COLOR_YELLOW);
+        display->setCursor(32, 15);
+        display->print(apSSID);
+
         // Password
-        u8g2.setForegroundColor(COLOR_WHITE);
-        u8g2.setCursor(2, 23);
-        u8g2.print("Pass:");
-        u8g2.setForegroundColor(COLOR_GREEN);
-        u8g2.setCursor(32, 23);
-        u8g2.print(apPassword);
-        
+        display->setTextColor(COLOR_WHITE);
+        display->setCursor(2, 23);
+        display->print("Pass:");
+        display->setTextColor(COLOR_GREEN);
+        display->setCursor(32, 23);
+        display->print(apPassword);
+
         // IP
-        u8g2.setForegroundColor(COLOR_WHITE);
-        u8g2.setCursor(2, 31);
-        u8g2.print("Go to: 192.168.4.1");
-        
+        display->setTextColor(COLOR_WHITE);
+        display->setCursor(2, 31);
+        display->print("Go to: 192.168.4.1");
+
         isDrawing = false;
         return;
     }
