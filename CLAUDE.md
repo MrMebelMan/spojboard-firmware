@@ -10,7 +10,7 @@ ESP32-based transit departure display that fetches real-time data from Prague's 
 - Standalone operation with direct API access
 - WiFi captive portal for configuration
 - Persistent settings in ESP32 NVS flash
-- U8g2 fonts for Czech character support
+- Custom Adafruit GFXfonts with Extended Latin for Czech character support
 - Web-based configuration interface
 
 ## Build & Development Commands
@@ -52,14 +52,14 @@ pio device list
 
 ### Single-File Structure (src/main.cpp)
 
-The entire application is contained in one file (~1167 lines), organized into logical sections:
+The entire application is contained in one file (~1160 lines), organized into logical sections:
 
 1. **Configuration Management (lines 52-184)**: NVS-based persistent storage for WiFi credentials, API keys, stop IDs
-2. **Display System (lines 189-468)**: HUB75 matrix driver with U8g2 font rendering for Czech characters
+2. **Display System (lines 189-468)**: HUB75 matrix driver with custom Adafruit GFXfonts for Czech character support
 3. **API Integration (lines 472-610)**: Golemio API client with JSON parsing (ArduinoJson, 8KB buffer)
 4. **Web Server (lines 614-959)**: Configuration UI with captive portal support
 5. **WiFi Management (lines 852-1013)**: Auto-fallback to AP mode on connection failure
-6. **Main Loop (lines 1079-1167)**: Event-driven updates for display, API calls, and web serving
+6. **Main Loop (lines 1079-1160)**: Event-driven updates for display, API calls, and web serving
 
 ### State Machine
 
@@ -78,7 +78,11 @@ Transitions:
   - Rows 0-2: Departure entries (line number, destination, ETA)
   - Row 3: Date/time status bar
 - **Color coding**: Line numbers have dedicated colors (Metro A=green, B=yellow, C=red, etc.)
-- **U8g2 fonts**: `u8g2_font_5x7_tf` for line numbers, `u8g2_font_6x10_tf` for destinations
+- **Custom GFXfonts**:
+  - `Ubuntu_Regular7pt7b` (small font) for compact text, line numbers, status
+  - `Ubuntu_Regular10pt7b` (medium font) for destinations, larger text
+  - Both include Extended Latin character set (Czech diacritics: ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý)
+  - Located in `/fonts` directory
 - **Non-blocking updates**: `isDrawing` flag prevents concurrent display access
 
 ### Memory Management
@@ -156,3 +160,37 @@ Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, 30s refresh, 3 departure
 - Timezone: CET/CEST (UTC+1/+2)
 - ETA calculation: Compares ISO timestamp from API with local time (mktime/difftime)
 - Display format: "Wed 08.Jan 14:35" on bottom row
+
+## Font System
+
+### Custom GFXfonts (Adafruit GFX Format)
+
+Located in `/fonts` directory:
+- `Ubuntu7pt7b.h` - 7pt Ubuntu Regular font (~162 lines, ~1.3KB)
+- `Ubuntu10pt7b.h` - 10pt Ubuntu Regular font (~219 lines, ~2KB)
+
+**Character Set:**
+- ASCII printable characters (0x20-0x7E)
+- Extended Latin for Czech support including: ž š č ř ň ť ď ú ů á é í ó ý (and uppercase)
+
+**Usage in Code:**
+```cpp
+#include "../fonts/Ubuntu7pt7b.h"
+#include "../fonts/Ubuntu10pt7b.h"
+
+const GFXfont* fontSmall = &Ubuntu_Regular7pt7b;
+const GFXfont* fontMedium = &Ubuntu_Regular10pt7b;
+
+display->setFont(fontSmall);
+display->setTextColor(COLOR_WHITE);
+display->setCursor(x, y);
+display->print("Příjezd");
+```
+
+**Font API (Adafruit GFX):**
+- `display->setFont(const GFXfont*)` - Switch font
+- `display->setTextColor(uint16_t)` - Set foreground color (transparent background)
+- `display->setCursor(int16_t x, int16_t y)` - Position cursor
+- `display->print(const char*)` - Render text
+
+All fonts are stored in PROGMEM to save RAM.

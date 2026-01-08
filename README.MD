@@ -8,7 +8,7 @@ A standalone ESP32-based transit departure display that fetches real-time depart
 - **WiFi Setup Portal**: Automatic AP mode with captive portal when WiFi fails - no code editing needed!
 - **Web Configuration**: Easy setup via built-in web interface
 - **Persistent Settings**: Configuration stored in ESP32 flash memory, survives reboots
-- **Czech Character Support**: U8g2 fonts for proper display of Czech station names
+- **Czech Character Support**: Custom GFXfonts with Extended Latin for proper display of Czech station names (ž, š, č, ř, etc.)
 - **Real-time Updates**: Shows line number, destination, and ETA in minutes
 - **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles
 - **Color-coded Lines**: Different colors for metro, tram, bus, and night lines
@@ -182,4 +182,5 @@ MIT License - Feel free to modify and share!
 
 - [Golemio API](https://api.golemio.cz) - Prague open data platform
 - [ESP32-HUB75-MatrixPanel-DMA](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA) - Display driver
-- [U8g2](https://github.com/olikraus/u8g2) - Font rendering with Czech support
+- [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) - Graphics primitives and font rendering
+- Ubuntu font family - Custom GFXfonts with Extended Latin character support
