@@ -69,6 +69,7 @@ struct Config
     int refreshInterval;  // Seconds between API calls
     int numDepartures;    // Number of departures to fetch
     int minDepartureTime; // Minimum departure time in minutes (filter out departures < this)
+    int brightness;       // Display brightness (0-255)
     bool configured;
 };
 
@@ -171,6 +172,7 @@ void loadConfig()
     config.refreshInterval = preferences.getInt("refresh", 30);
     config.numDepartures = preferences.getInt("numDeps", 3);
     config.minDepartureTime = preferences.getInt("minDepTime", 3);
+    config.brightness = preferences.getInt("brightness", 90);
     config.configured = preferences.getBool("configured", false);
 
     preferences.end();
@@ -199,6 +201,7 @@ void saveConfig()
     preferences.putInt("refresh", config.refreshInterval);
     preferences.putInt("numDeps", config.numDepartures);
     preferences.putInt("minDepTime", config.minDepartureTime);
+    preferences.putInt("brightness", config.brightness);
     preferences.putBool("configured", true);
 
     preferences.end();
@@ -235,7 +238,7 @@ void setup_display()
             ;
     }
 
-    display->setBrightness8(90);
+    display->setBrightness8(config.brightness);
     display->clearScreen();
 
     // Define colors
@@ -935,6 +938,9 @@ void handleRoot()
 
     html += "<div><label>Min Departure Time (min)</label>";
     html += "<input type='number' name='mindeptime' value='" + String(config.minDepartureTime) + "' min='0' max='30'></div>";
+
+    html += "<div><label>Display Brightness (0-255)</label>";
+    html += "<input type='number' name='brightness' value='" + String(config.brightness) + "' min='0' max='255'></div>";
     html += "</div>";
 
     if (apModeActive)
@@ -1015,6 +1021,16 @@ void handleSave()
             config.minDepartureTime = 0;
         if (config.minDepartureTime > 30)
             config.minDepartureTime = 30;
+    }
+    if (server.hasArg("brightness"))
+    {
+        config.brightness = server.arg("brightness").toInt();
+        if (config.brightness < 0)
+            config.brightness = 0;
+        if (config.brightness > 255)
+            config.brightness = 255;
+        // Apply brightness immediately
+        display->setBrightness8(config.brightness);
     }
 
     config.configured = true;
