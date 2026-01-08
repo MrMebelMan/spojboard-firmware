@@ -551,8 +551,8 @@ struct StringReplacement
 const StringReplacement replacements[] = {
     {"Nádraží", "Nádr."},
     // Add more replacements here as needed
-    // {"Sídliště", "Sídl."},
-    // {"Nemocnice", "Nem."},
+    {"Sídliště", "Sídl."},
+    {"Nemocnice", "Nem."},
 };
 const int replacementCount = sizeof(replacements) / sizeof(replacements[0]);
 

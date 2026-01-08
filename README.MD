@@ -10,6 +10,7 @@ A standalone ESP32-based transit departure display that fetches real-time depart
 - **Web Configuration**: Easy setup via built-in web interface
 - **Persistent Settings**: Configuration stored in ESP32 flash memory, survives reboots
 - **Full Czech Character Support**: Custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion for perfect display of Czech station names (ž, š, č, ř, ň, ť, ď, etc.)
+- **Smart Text Shortening**: Automatic shortening of long destination names (e.g., "Nádraží Hostivař" → "Nádr. Hostivař") to maximize display space
 - **Smart Filtering**: Configurable minimum departure time (default 3 minutes) to hide departures that are too soon to catch
 - **Real-time Updates**: Shows line number, destination, and ETA in minutes
 - **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles
@@ -192,6 +193,12 @@ When multiple stop IDs are configured (comma-separated), the system:
 
 This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from.
 
+### Destination String Shortening
+To maximize display space on the 128×32 LED matrix, long Czech destination names are automatically shortened before display, like:
+- "Nádraží" → "Nádr."
+
+The shortening is applied before UTF-8 to ISO-8859-2 conversion, ensuring Czech diacritics are preserved correctly.
+
 ## Czech Character Support
 
 This project implements full support for Czech diacritical characters using a custom 8-bit font system.
@@ -317,4 +324,5 @@ See the LICENSE file for full details.
 - [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) - Graphics primitives and font rendering
 - [Michel Deslierres](https://sigmdel.ca/michel/program/misc/gfxfont_8bit_en.html) - Original UTF-8 to ISO-8859-2 conversion code
 - [Petr Brouzda - fontconvert8-iso8859-2](https://github.com/petrbrouzda/fontconvert8-iso8859-2) - Font conversion tool and UTF-8 conversion implementation
+- [Claude Code](https://claude.ai/code) - AI-assisted development and code refinement
 - DepartureMono font family - Custom 8-bit GFXfonts with ISO-8859-2 character support
