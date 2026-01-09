@@ -6,6 +6,9 @@ An ESP32-based LED matrix display showing real-time transit departures from Prag
 
 No external server required - standalone operation with web-based configuration!
 
+![SpojBoard Device](docs/images/spojboard-device.jpg)
+*SpojBoard showing real-time departures on a 128×32 LED matrix display*
+
 ## Features
 
 - **Direct API Access**: Fetches departure data from Golemio PID API every 30 seconds (configurable)
@@ -19,6 +22,7 @@ No external server required - standalone operation with web-based configuration!
 - **Real-time Updates**: Shows line number, destination, and ETA in minutes
 - **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles
 - **Color-coded Lines**: Colored line numbers on black backgrounds for high contrast and readability
+- **Custom Line Colors**: Configure custom colors for specific lines via web interface (supports pattern matching with wildcards)
 - **Firmware Updates**: GitHub-based OTA updates with user confirmation - check for new releases directly from the web interface
 
 ## Hardware
@@ -79,6 +83,8 @@ The built-in web server provides:
   - Refresh interval (10-300 seconds)
   - Number of departures to display (1-6)
   - Minimum departure time (0-30 minutes) - filter out departures too soon to catch
+  - Display brightness (0-255)
+  - Custom line colors with pattern matching (e.g., "9*" for all night trams)
 - **Actions**:
   - Force refresh
   - Update firmware (manual .bin upload)
@@ -115,8 +121,10 @@ The built-in web server provides:
 ```
 
 **Visual Design**:
-- Line numbers displayed in their route color (green, yellow, red, etc.) on black background rectangles
-- Text is horizontally centered and vertically baseline-aligned with destinations
+- Line numbers displayed in their route color on uniform 18-pixel black background boxes (fits 1-3 characters)
+- Route numbers are horizontally centered within their boxes for consistent alignment
+- All destinations start at the same X position regardless of route length
+- Destination text dynamically truncated based on ETA display width to prevent overlap
 - High contrast design optimized for LED matrix visibility
 
 ### AP Setup Mode
@@ -131,14 +139,24 @@ The built-in web server provides:
 
 ## Color Coding
 
-### Line Numbers
-- **Green**: Metro A, Tram 31
-- **Yellow**: Metro B, Default trams
-- **Red**: Metro C, Tram 8
-- **Orange**: Tram 7
-- **Purple**: Tram 12
-- **Blue**: S-trains
-- **Cyan**: Night trams (91-99)
+### Line Numbers (Default Colors)
+
+These colors are used by default and can be customized via the web interface:
+
+- **Green**: Metro A
+- **Yellow**: Metro B, Default fallback for all unmapped lines
+- **Red**: Metro C
+- **White**: 2-digit trams 10-29 (e.g., 10, 12, 15, 17, 22)
+- **Purple**: 3-digit trams 100-299 (e.g., 100, 102, 200)
+- **Blue**: S-trains (S1, S2, S3, etc.)
+- **Cyan**: Night trams 91-99
+
+**Customizing Line Colors:**
+- Configure specific colors for individual lines (e.g., "A=RED")
+- Use pattern matching with trailing asterisk (e.g., "9*=CYAN" matches all lines starting with 9)
+- Exact matches take priority over patterns
+- Unmapped lines use the hardcoded defaults above
+- Available colors: RED, GREEN, BLUE, YELLOW, ORANGE, PURPLE, CYAN, WHITE
 
 ### ETA Colors
 - **White**: > 5 minutes
@@ -310,13 +328,13 @@ The device implements captive portal detection for:
 
 ### Multi-Stop Behavior
 When multiple stop IDs are configured (comma-separated), the system:
-1. Queries each stop individually via separate API calls
+1. Queries each stop individually via separate API calls (with 1-second delay between calls to reduce server load)
 2. Collects all departures (up to 30 total)
 3. Sorts by ETA (earliest departures first)
 4. Applies minimum departure time filter
 5. Displays the top N results (configurable 1-6)
 
-This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from.
+This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from. The 1-second delay between API calls helps avoid rate limiting and reduces load on the Golemio API servers.
 
 ### Destination String Shortening
 To maximize display space on the 128×32 LED matrix, long Czech destination names are automatically shortened before display, like:

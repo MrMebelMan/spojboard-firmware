@@ -57,16 +57,40 @@ pio device list
 
 ## Architecture
 
-### Single-File Structure (src/main.cpp)
+### Modular Structure
 
-The entire application is contained in one file (~1160 lines), organized into logical sections:
+The application follows a layered, modular architecture with zero circular dependencies:
 
-1. **Configuration Management (lines 52-184)**: NVS-based persistent storage for WiFi credentials, API keys, stop IDs
-2. **Display System (lines 189-468)**: HUB75 matrix driver with custom Adafruit GFXfonts for Czech character support
-3. **API Integration (lines 472-610)**: Golemio API client with JSON parsing (ArduinoJson, 8KB buffer)
-4. **Web Server (lines 614-959)**: Configuration UI with captive portal support
-5. **WiFi Management (lines 852-1013)**: Auto-fallback to AP mode on connection failure
-6. **Main Loop (lines 1079-1160)**: Event-driven updates for display, API calls, and web serving
+```
+src/
+├── main.cpp                          # Application orchestration (~340 lines)
+├── config/
+│   ├── AppConfig.h/cpp              # Configuration structure & NVS persistence
+├── display/
+│   ├── DisplayManager.h/cpp         # Display rendering & layout
+│   ├── DisplayColors.h/cpp          # Color system & configurable line color mapping
+├── api/
+│   ├── GolemioAPI.h/cpp             # API client for Golemio
+│   ├── DepartureData.h/cpp          # Data structures & utilities
+├── network/
+│   ├── WiFiManager.h/cpp            # WiFi connection & AP mode
+│   ├── CaptivePortal.h/cpp          # DNS server & captive portal
+│   ├── ConfigWebServer.h/cpp        # Web interface handlers
+│   ├── OTAUpdateManager.h/cpp       # OTA firmware upload handling
+│   ├── GitHubOTA.h/cpp              # GitHub releases integration
+└── utils/
+    ├── Logger.h/cpp                 # Logging utilities
+    ├── TimeUtils.h/cpp              # NTP sync & time formatting
+    ├── gfxlatin2.h/cpp              # UTF-8 to ISO-8859-2 conversion
+    └── decodeutf8.h/cpp             # UTF-8 decoder
+```
+
+**Key Design Principles:**
+- **Layered Dependencies**: Lower layers never depend on higher layers
+- **Single Responsibility**: Each module has one clear purpose
+- **Callback Pattern**: Modules communicate upward via callbacks (e.g., ConfigWebServer → main.cpp)
+- **Pure Data Structures**: Config passed as parameter, not stored in modules
+- **Static Allocation**: No dynamic allocation in main loop for stability
 
 ### State Machine
 
@@ -84,9 +108,21 @@ Transitions:
 - **Row-based layout**: 4 rows × 8 pixels each on 128×32 matrix
   - Rows 0-2: Departure entries (line number, destination, ETA)
   - Row 3: Date/time status bar with comma separator (e.g., "Mon, Feb 15 14:35")
-- **Color coding**: Line numbers have dedicated colors (Metro A=green, B=yellow, C=red, etc.)
-- **Smart text colors**: Automatically uses black text on bright backgrounds (white, yellow, green, orange, cyan, red) and white text on dark backgrounds (blue, purple, black)
-- **Centered line numbers**: Text is dynamically centered within background rectangles using `getTextBounds()` with proper x1 offset compensation
+- **Uniform route boxes**: All line numbers displayed in 18-pixel wide black background boxes (fits 1-3 characters)
+  - Route numbers horizontally centered within boxes using `getTextBounds()` with proper x1 offset compensation
+  - All destinations start at fixed X position (22 pixels) for consistent vertical alignment
+- **Dynamic destination truncation**: Text length adjusted based on ETA display width to prevent overlap
+  - ETA < 10: maxChars (16 without AC, 15 with AC)
+  - ETA 10-99: maxChars - 1 (accounts for 2-digit width)
+  - ETA >= 100: maxChars - 2 (accounts for ">1h" width)
+- **Configurable line colors**: Custom color mapping system with pattern matching
+  - User can configure colors via web interface (format: "LINE=COLOR,LINE=COLOR,...")
+  - Supports pattern matching with trailing asterisk (e.g., "9*=CYAN" for night trams 91-99)
+  - Two-pass matching: exact matches first, then patterns
+  - Falls back to hardcoded defaults if no match found
+  - Available colors: RED, GREEN, BLUE, YELLOW, ORANGE, PURPLE, CYAN, WHITE
+  - Stored in `Config.lineColorMap[256]` field, persisted to NVS
+- **Default color coding**: Hardcoded fallback colors (Metro A=green, B=yellow, C=red, S-trains=blue, night trams=cyan, etc.)
 - **Custom 8-bit ISO-8859-2 GFXfonts**:
   - `DepartureMono4pt8b` (small font) - Used for compact text, line numbers, status
   - `DepartureMono5pt8b` (medium font) - Used for destinations, larger text
@@ -115,10 +151,15 @@ HUB75 matrix pins are hardcoded for Adafruit MatrixPortal ESP32-S3 (lines 25-40)
 - Query parameters: `ids` (comma-separated stop IDs), `total`, `minutesBefore`, `minutesAfter`
 - Response format: JSON with stops array and departures array
 - Rate limits: Configurable refresh interval (10-300s) to avoid HTTP 429
+- **Multi-stop rate limiting**: 1-second delay (`delay(1000)`) between API calls when querying multiple stops
+  - Reduces server load and prevents rate limiting
+  - Applied in `GolemioAPI::fetchDepartures()` loop after each `querySingleStop()` call
 
 ### Stop ID Format
 - GTFS IDs from PID data (e.g., "U693Z2P")
 - Multiple stops supported via comma separation in config.stopIds
+- Each stop queried individually with separate API calls (with 1s delay between calls)
+- All departures collected, sorted by ETA, filtered by minimum departure time, then top N displayed
 - Find IDs at: http://data.pid.cz/stops/xml/StopsByName.xml
 
 ### Departure Data Structure
@@ -165,9 +206,13 @@ NVS namespace: "transport"
 - `refresh` (Int, seconds, 10-300)
 - `numDeps` (Int, 1-6)
 - `minDepTime` (Int, minutes, 0-30) - Filter out departures below this time
+- `brightness` (Int, 0-255) - Display brightness level
+- `lineColorMap` (String, max 256 chars) - Custom line color mappings (format: "LINE=COLOR,LINE=COLOR,...")
+  - Supports pattern matching with trailing asterisk (e.g., "9*=CYAN")
+  - Falls back to hardcoded defaults if empty or no match
 - `configured` (Bool)
 
-Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, 30s refresh, 3 departures, 3min minimum departure time
+Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, 30s refresh, 3 departures, 3min minimum departure time, brightness 90, empty lineColorMap (uses hardcoded defaults)
 
 ## Time Handling
 
