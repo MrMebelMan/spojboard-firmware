@@ -1303,14 +1303,14 @@ void setup()
 
     logMemory("boot");
 
-    // Initialize display
+    // Load configuration FIRST (needed for display brightness)
+    loadConfig();
+
+    // Initialize display with correct brightness from config
     setup_display();
     logMemory("display_init");
 
     drawStatus("Starting...", "", COLOR_WHITE);
-
-    // Load configuration
-    loadConfig();
 
     // Connect to WiFi (will fall back to AP mode if fails)
     connectWiFi();
