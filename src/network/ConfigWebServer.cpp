@@ -221,7 +221,11 @@ void ConfigWebServer::handleRoot()
     }
 
     html += "<p><strong>Free Memory:</strong> " + String(ESP.getFreeHeap()) + " bytes</p>";
-    html += "<p><strong>Firmware:</strong> v" + String(FIRMWARE_VERSION) + " (" + String(BUILD_TIMESTAMP) + ")</p>";
+
+    // Format firmware version with build ID (8 hex chars)
+    char buildIdStr[10];
+    snprintf(buildIdStr, sizeof(buildIdStr), "%08x", BUILD_ID);
+    html += "<p><strong>Firmware:</strong> Release " + String(FIRMWARE_RELEASE) + " (" + String(buildIdStr) + ")</p>";
     html += "</div>";
 
     // Configuration form
@@ -466,8 +470,10 @@ void ConfigWebServer::handleUpdate()
     // Current firmware info
     html += "<div class='card'>";
     html += "<h2>Current Firmware</h2>";
-    html += "<p><strong>Version:</strong> v" + String(FIRMWARE_VERSION) + "</p>";
-    html += "<p><strong>Build Date:</strong> " + String(BUILD_TIMESTAMP) + "</p>";
+    char currentBuildId[10];
+    snprintf(currentBuildId, sizeof(currentBuildId), "%08x", BUILD_ID);
+    html += "<p><strong>Release:</strong> " + String(FIRMWARE_RELEASE) + "</p>";
+    html += "<p><strong>Build ID:</strong> " + String(currentBuildId) + "</p>";
     html += "</div>";
 
     // Upload form
