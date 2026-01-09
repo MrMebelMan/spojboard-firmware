@@ -59,11 +59,12 @@ struct Config
     char wifiSsid[64];
     char wifiPassword[64];
     char apiKey[300];
-    char stopIds[128];    // Comma-separated stop IDs (e.g., "U693Z2P,U693Z1P")
-    int refreshInterval;  // Seconds between API calls
-    int numDepartures;    // Number of departures to fetch
-    int minDepartureTime; // Minimum departure time in minutes (filter out departures < this)
-    int brightness;       // Display brightness (0-255)
+    char stopIds[128];      // Comma-separated stop IDs (e.g., "U693Z2P,U693Z1P")
+    int refreshInterval;    // Seconds between API calls
+    int numDepartures;      // Number of departures to fetch
+    int minDepartureTime;   // Minimum departure time in minutes (filter out departures < this)
+    int brightness;         // Display brightness (0-255)
+    char lineColorMap[256]; // Line color mappings (format: "A=GREEN,B=YELLOW,9*=CYAN")
     bool configured;
 };
 

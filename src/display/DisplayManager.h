@@ -69,6 +69,12 @@ public:
     void drawOTAProgress(size_t progress, size_t total);
 
     /**
+     * Set configuration pointer for color mappings
+     * @param cfg Pointer to Config struct
+     */
+    void setConfig(const Config* cfg) { config = cfg; }
+
+    /**
      * Get pointer to display object (for direct access if needed)
      */
     MatrixPanel_I2S_DMA* getDisplay() { return display; }
@@ -76,6 +82,7 @@ public:
 private:
     MatrixPanel_I2S_DMA* display;
     bool isDrawing;
+    const Config* config;
 
     const GFXfont* fontSmall;
     const GFXfont* fontMedium;

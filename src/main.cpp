@@ -142,6 +142,7 @@ void setup()
         Serial.println("Display initialization failed!");
         return;
     }
+    displayManager.setConfig(&config);
     logMemory("display_init");
 
     displayManager.drawStatus("Starting...", "", COLOR_WHITE);

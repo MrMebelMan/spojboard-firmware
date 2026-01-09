@@ -7,9 +7,9 @@
 
 // HTML Templates
 // Static instance pointer for OTA callback
-ConfigWebServer* ConfigWebServer::instanceForCallback = nullptr;
+ConfigWebServer *ConfigWebServer::instanceForCallback = nullptr;
 
-const char* ConfigWebServer::HTML_HEADER = R"rawliteral(
+const char *ConfigWebServer::HTML_HEADER = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -44,7 +44,7 @@ const char* ConfigWebServer::HTML_HEADER = R"rawliteral(
 <body>
 )rawliteral";
 
-const char* ConfigWebServer::HTML_FOOTER = "</body></html>";
+const char *ConfigWebServer::HTML_FOOTER = "</body></html>";
 
 ConfigWebServer::ConfigWebServer()
     : server(nullptr), otaManager(nullptr), githubOTA(nullptr), displayManager(nullptr),
@@ -56,7 +56,7 @@ ConfigWebServer::ConfigWebServer()
 {
     otaManager = new OTAUpdateManager();
     githubOTA = new GitHubOTA();
-    instanceForCallback = this;  // Set static instance for OTA callback
+    instanceForCallback = this; // Set static instance for OTA callback
 }
 
 ConfigWebServer::~ConfigWebServer()
@@ -86,19 +86,29 @@ bool ConfigWebServer::begin()
     server = new WebServer(80);
 
     // Register handlers with lambda wrappers to access 'this'
-    server->on("/", HTTP_GET, [this]() { handleRoot(); });
-    server->on("/save", HTTP_POST, [this]() { handleSave(); });
-    server->on("/refresh", HTTP_POST, [this]() { handleRefresh(); });
-    server->on("/reboot", HTTP_POST, [this]() { handleReboot(); });
-    server->on("/clear-config", HTTP_POST, [this]() { handleClearConfig(); });
-    server->on("/update", HTTP_GET, [this]() { handleUpdate(); });
-    server->on("/update", HTTP_POST,
-        [this]() { handleUpdateUpload(); },  // Upload handler
-        [this]() { handleUpdateUpload(); }   // Same function handles chunks
+    server->on("/", HTTP_GET, [this]()
+               { handleRoot(); });
+    server->on("/save", HTTP_POST, [this]()
+               { handleSave(); });
+    server->on("/refresh", HTTP_POST, [this]()
+               { handleRefresh(); });
+    server->on("/reboot", HTTP_POST, [this]()
+               { handleReboot(); });
+    server->on("/clear-config", HTTP_POST, [this]()
+               { handleClearConfig(); });
+    server->on("/update", HTTP_GET, [this]()
+               { handleUpdate(); });
+    server->on("/update", HTTP_POST, [this]()
+               { handleUpdateUpload(); }, // Upload handler
+               [this]()
+               { handleUpdateUpload(); } // Same function handles chunks
     );
-    server->on("/check-update", HTTP_GET, [this]() { handleCheckUpdate(); });
-    server->on("/download-update", HTTP_POST, [this]() { handleDownloadUpdate(); });
-    server->onNotFound([this]() { handleNotFound(); });
+    server->on("/check-update", HTTP_GET, [this]()
+               { handleCheckUpdate(); });
+    server->on("/download-update", HTTP_POST, [this]()
+               { handleDownloadUpdate(); });
+    server->onNotFound([this]()
+                       { handleNotFound(); });
 
     server->begin();
 
@@ -142,16 +152,16 @@ void ConfigWebServer::setCallbacks(ConfigSaveCallback onSave, RefreshCallback on
     onRebootCallback = onReboot;
 }
 
-void ConfigWebServer::setDisplayManager(DisplayManager* displayMgr)
+void ConfigWebServer::setDisplayManager(DisplayManager *displayMgr)
 {
     displayManager = displayMgr;
 }
 
-void ConfigWebServer::updateState(const Config* config,
+void ConfigWebServer::updateState(const Config *config,
                                   bool connected, bool apMode,
-                                  const char* ssid, const char* password, int clientCount,
-                                  bool error, const char* errorMsg,
-                                  int depCount, const char* stop)
+                                  const char *ssid, const char *password, int clientCount,
+                                  bool error, const char *errorMsg,
+                                  int depCount, const char *stop)
 {
     currentConfig = config;
     wifiConnected = connected;
@@ -289,6 +299,87 @@ void ConfigWebServer::handleRoot()
     html += "<input type='number' name='brightness' value='" + String(currentConfig->brightness) + "' min='0' max='255'></div>";
     html += "</div>";
 
+    // Line Colors section (only show when not in AP mode)
+    if (!apModeActive)
+    {
+        html += "<div class='card'>";
+        html += "<h2>Line Colors</h2>";
+        html += "<p class='info'>Configure custom colors for specific transit lines. Leave empty to use defaults.</p>";
+        html += "<p class='info' style='font-size:0.9em; color:#888;'>💡 Tip: Use * for patterns (e.g., \"9*\" matches all night trams 91-99, \"S*\" matches all S-trains)</p>";
+
+        // Table header
+        html += "<table id='lineColorTable' style='width:100%; margin-bottom:10px; border-collapse: collapse;'>";
+        html += "<thead><tr style='border-bottom: 2px solid #444;'>";
+        html += "<th style='text-align:left; padding:8px;'>Line</th>";
+        html += "<th style='text-align:left; padding:8px;'>Color</th>";
+        html += "<th style='text-align:center; padding:8px; width:60px;'>Action</th>";
+        html += "</tr></thead>";
+        html += "<tbody id='lineColorRows'>";
+
+        // Parse existing config and create rows
+        if (currentConfig && strlen(currentConfig->lineColorMap) > 0)
+        {
+            char mapCopy[256];
+            strlcpy(mapCopy, currentConfig->lineColorMap, sizeof(mapCopy));
+
+            char *token = strtok(mapCopy, ",");
+            while (token != nullptr)
+            {
+                char *equals = strchr(token, '=');
+                if (equals)
+                {
+                    *equals = '\0';
+                    const char *lineName = token;
+                    const char *colorName = equals + 1;
+
+                    // Generate row with values
+                    html += "<tr>";
+                    html += "<td style='padding:8px;'>";
+                    html += "<input type='text' class='lineInput' value='" + String(lineName) + "' ";
+                    html += "style='width:80px; padding:5px;' maxlength='4' placeholder='A or 9*'>";
+                    html += "</td>";
+                    html += "<td style='padding:8px;'>";
+                    html += "<select class='colorSelect' style='width:100%; padding:5px;'>";
+
+                    // Color options (mark selected)
+                    const char *colors[] = {"RED", "GREEN", "BLUE", "YELLOW", "ORANGE", "PURPLE", "CYAN", "WHITE"};
+                    for (int i = 0; i < 8; i++)
+                    {
+                        html += "<option value='" + String(colors[i]) + "'";
+                        if (strcasecmp(colorName, colors[i]) == 0)
+                        {
+                            html += " selected";
+                        }
+                        html += ">" + String(colors[i]) + "</option>";
+                    }
+
+                    html += "</select>";
+                    html += "</td>";
+                    html += "<td style='padding:8px; text-align:center;'>";
+                    html += "<button type='button' onclick='deleteLineRow(this)' ";
+                    html += "style='background:#ff6b6b; color:#fff; padding:5px 10px; border:none; cursor:pointer;'>✕</button>";
+                    html += "</td>";
+                    html += "</tr>";
+                }
+                token = strtok(nullptr, ",");
+            }
+        }
+
+        html += "</tbody>";
+        html += "</table>";
+
+        // Add Row button
+        html += "<button type='button' onclick='addLineRow()' ";
+        html += "style='background:#00d4ff; color:#fff; padding:8px 15px; border:none; cursor:pointer; margin-bottom:10px;'>";
+        html += "+ Add Line";
+        html += "</button>";
+
+        // Hidden input to store serialized data
+        html += "<input type='hidden' name='linecolormap' id='lineColorMapData' value=''>";
+
+        html += "</div>";
+    }
+
     if (apModeActive)
     {
         html += "<button type='submit'>Save & Connect to WiFi</button>";
@@ -309,7 +400,7 @@ void ConfigWebServer::handleRoot()
         html += "<button type='submit'>Refresh Now</button>";
         html += "</form>";
         html += "<form method='GET' action='/update' style='display:inline; margin-top:10px'>";
-        html += "<button type='submit'>Update Firmware</button>";
+        html += "<button type='submit'>Install Firmware</button>";
         html += "</form>";
         html += "<form id='checkUpdateForm' onsubmit='checkForUpdate(event); return false;' style='display:inline; margin-top:10px'>";
         html += "<button type='submit' id='checkUpdateBtn'>Check for Updates</button>";
@@ -318,7 +409,7 @@ void ConfigWebServer::handleRoot()
         html += "<button type='submit' class='danger'>Reboot Device</button>";
         html += "</form>";
         html += "<form method='POST' action='/clear-config' onsubmit='return confirm(\"⚠️ WARNING: This will erase ALL settings and reboot into setup mode. Continue?\");' style='display:inline; margin-top:10px'>";
-        html += "<button type='submit' class='danger'>Clear All Settings</button>";
+        html += "<button type='submit' class='danger'>Reset All Settings</button>";
         html += "</form>";
         html += "<div id='updateStatus' style='display:none; margin-top:15px;'></div>";
         html += "</div>";
@@ -411,7 +502,7 @@ async function downloadUpdate(url, size) {
                     ✅ Update installed successfully! Device rebooting...
                 </div>
             `;
-            setTimeout(() => window.location.reload(), 8000);
+            setTimeout(() => window.location.reload(), 10000);
         } else {
             status.innerHTML = `
                 <div class='status error'>
@@ -439,6 +530,79 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+</script>
+)rawliteral";
+    }
+
+    // JavaScript for line color configuration
+    if (!apModeActive)
+    {
+        html += R"rawliteral(
+<script>
+// Add new empty row to line color table
+function addLineRow() {
+    const tbody = document.getElementById('lineColorRows');
+    const row = tbody.insertRow();
+
+    // Line input cell
+    const cell1 = row.insertCell(0);
+    cell1.style.padding = '8px';
+    cell1.innerHTML = "<input type='text' class='lineInput' style='width:80px; padding:5px;' maxlength='4' placeholder='A or 9*'>";
+
+    // Color select cell
+    const cell2 = row.insertCell(1);
+    cell2.style.padding = '8px';
+    const colors = ['RED', 'GREEN', 'BLUE', 'YELLOW', 'ORANGE', 'PURPLE', 'CYAN', 'WHITE'];
+    let selectHtml = "<select class='colorSelect' style='width:100%; padding:5px;'>";
+    colors.forEach(color => {
+        selectHtml += `<option value='${color}'>${color}</option>`;
+    });
+    selectHtml += "</select>";
+    cell2.innerHTML = selectHtml;
+
+    // Delete button cell
+    const cell3 = row.insertCell(2);
+    cell3.style.padding = '8px';
+    cell3.style.textAlign = 'center';
+    cell3.innerHTML = "<button type='button' onclick='deleteLineRow(this)' style='background:#ff6b6b; color:#fff; padding:5px 10px; border:none; cursor:pointer;'>✕</button>";
+}
+
+// Delete row from table
+function deleteLineRow(btn) {
+    const row = btn.closest('tr');
+    row.remove();
+}
+
+// Serialize table to hidden input before form submit
+function serializeLineColors() {
+    const rows = document.querySelectorAll('#lineColorRows tr');
+    const mappings = [];
+
+    rows.forEach(row => {
+        const lineInput = row.querySelector('.lineInput');
+        const colorSelect = row.querySelector('.colorSelect');
+
+        if (lineInput && colorSelect) {
+            const line = lineInput.value.trim().toUpperCase();
+            const color = colorSelect.value;
+
+            // Only include non-empty line names
+            if (line.length > 0) {
+                mappings.push(`${line}=${color}`);
+            }
+        }
+    });
+
+    // Store as comma-separated string
+    document.getElementById('lineColorMapData').value = mappings.join(',');
+
+    return true;  // Allow form submission
+}
+
+// Attach serializer to form submit
+document.querySelector('form').addEventListener('submit', function(e) {
+    serializeLineColors();
+});
 </script>
 )rawliteral";
     }
@@ -512,6 +676,19 @@ void ConfigWebServer::handleSave()
             newConfig.brightness = 0;
         if (newConfig.brightness > 255)
             newConfig.brightness = 255;
+    }
+
+    // Line color map
+    if (server->hasArg("linecolormap"))
+    {
+        strlcpy(newConfig.lineColorMap,
+                server->arg("linecolormap").c_str(),
+                sizeof(newConfig.lineColorMap));
+
+        // Log configuration
+        logTimestamp();
+        Serial.print("Line color map updated: ");
+        Serial.println(newConfig.lineColorMap);
     }
 
     newConfig.configured = true;
@@ -692,7 +869,7 @@ void ConfigWebServer::handleUpdateUpload()
     otaManager->handleUpload(server, otaProgressCallback);
 
     // Check if upload finished
-    HTTPUpload& upload = server->upload();
+    HTTPUpload &upload = server->upload();
     if (upload.status == UPLOAD_FILE_END)
     {
         // Send response based on success/failure
@@ -755,34 +932,49 @@ void ConfigWebServer::githubOtaProgressCallback(size_t progress, size_t total)
 }
 
 // Helper function to escape JSON strings
-String escapeJsonString(const char* str)
+String escapeJsonString(const char *str)
 {
     String result = "";
-    if (!str) return result;
+    if (!str)
+        return result;
 
     for (size_t i = 0; str[i] != '\0'; i++)
     {
         char c = str[i];
         switch (c)
         {
-            case '"':  result += "\\\""; break;
-            case '\\': result += "\\\\"; break;
-            case '\n': result += "\\n"; break;
-            case '\r': result += "\\r"; break;
-            case '\t': result += "\\t"; break;
-            case '\b': result += "\\b"; break;
-            case '\f': result += "\\f"; break;
-            default:
-                // Skip other control characters
-                if (c >= 0 && c < 32)
-                {
-                    // Skip control characters
-                }
-                else
-                {
-                    result += c;
-                }
-                break;
+        case '"':
+            result += "\\\"";
+            break;
+        case '\\':
+            result += "\\\\";
+            break;
+        case '\n':
+            result += "\\n";
+            break;
+        case '\r':
+            result += "\\r";
+            break;
+        case '\t':
+            result += "\\t";
+            break;
+        case '\b':
+            result += "\\b";
+            break;
+        case '\f':
+            result += "\\f";
+            break;
+        default:
+            // Skip other control characters
+            if (c >= 0 && c < 32)
+            {
+                // Skip control characters
+            }
+            else
+            {
+                result += c;
+            }
+            break;
         }
     }
     return result;
@@ -850,7 +1042,8 @@ void ConfigWebServer::handleDownloadUpdate()
 
     int sizeStart = body.indexOf("\"expectedSize\":") + 15;
     int sizeEnd = body.indexOf(",", sizeStart);
-    if (sizeEnd < 0) sizeEnd = body.indexOf("}", sizeStart);
+    if (sizeEnd < 0)
+        sizeEnd = body.indexOf("}", sizeStart);
     String sizeStr = body.substring(sizeStart, sizeEnd);
     size_t expectedSize = sizeStr.toInt();
 

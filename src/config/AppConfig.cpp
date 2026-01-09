@@ -15,6 +15,7 @@ void loadConfig(Config& config)
     config.numDepartures = preferences.getInt("numDeps", 3);
     config.minDepartureTime = preferences.getInt("minDepTime", 3);
     config.brightness = preferences.getInt("brightness", 90);
+    strlcpy(config.lineColorMap, preferences.getString("lineColorMap", "").c_str(), sizeof(config.lineColorMap));
     config.configured = preferences.getBool("configured", false);
 
     preferences.end();
@@ -45,6 +46,7 @@ void saveConfig(const Config& config)
     preferences.putInt("numDeps", config.numDepartures);
     preferences.putInt("minDepTime", config.minDepartureTime);
     preferences.putInt("brightness", config.brightness);
+    preferences.putString("lineColorMap", config.lineColorMap);
     preferences.putBool("configured", true);
 
     preferences.end();

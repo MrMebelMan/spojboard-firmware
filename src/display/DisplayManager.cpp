@@ -9,7 +9,7 @@
 #include "../fonts/DepartureMono5pt8b.h"
 
 DisplayManager::DisplayManager()
-    : display(nullptr), isDrawing(false)
+    : display(nullptr), isDrawing(false), config(nullptr)
 {
     fontSmall = &DepartureMono_Regular4pt8b;
     fontMedium = &DepartureMono_Regular5pt8b;
@@ -70,7 +70,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     int y = row * 8; // Each row is 8 pixels
 
     // Draw line number background - always black
-    uint16_t lineColor = getLineColor(dep.line);
+    uint16_t lineColor = getLineColorWithConfig(dep.line, config ? config->lineColorMap : "");
     int bgWidth = (strlen(dep.line) > 2) ? 18 : 14;
     display->fillRect(1, y + 1, bgWidth, 7, COLOR_BLACK);
 
