@@ -1,12 +1,7 @@
 #include <Arduino.h>
-#include <WiFi.h>
 #include <HTTPClient.h>
-#include <WebServer.h>
-#include <Preferences.h>
-#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <ArduinoJson.h>
 #include <time.h>
-#include <DNSServer.h>
 
 // Project modules
 #include "utils/Logger.h"
@@ -15,6 +10,9 @@
 #include "config/AppConfig.h"
 #include "api/DepartureData.h"
 #include "display/DisplayManager.h"
+#include "network/WiFiManager.h"
+#include "network/CaptivePortal.h"
+#include "network/ConfigWebServer.h"
 
 // Hardware configuration and defaults are now in config/AppConfig.h
 
@@ -22,7 +20,9 @@
 // Global Objects
 // ============================================================================
 DisplayManager displayManager;
-WebServer server(80);
+WiFiManager wifiManager;
+CaptivePortal captivePortal;
+ConfigWebServer webServer;
 
 // ============================================================================
 // Configuration Storage (structure defined in config/AppConfig.h)
@@ -41,36 +41,21 @@ int departureCount = 0;
 unsigned long lastApiCall = 0;
 unsigned long lastDisplayUpdate = 0;
 bool needsDisplayUpdate = false;
-bool isDrawing = false;
-bool wifiConnected = false;
-bool apModeActive = false;
 bool apiError = false;
 char apiErrorMsg[64] = "";
 char stopName[64] = "";
 
-// AP Mode Configuration
-#define AP_SSID_PREFIX "TransportDisplay-"
-#define WIFI_CONNECT_ATTEMPTS 20
-char apSSID[32];
-char apPassword[9]; // 8 chars + null
-
-// DNS Server for captive portal
-DNSServer dnsServer;
-const byte DNS_PORT = 53;
-
-// Debug logging functions are now in utils/Logger.h
-
-// Configuration management functions are now in config/AppConfig.h
-// Display management is now in display/DisplayManager.h
-// Time utilities are now in utils/TimeUtils.h
-// Color management is now in display/DisplayColors.h
+// Network layer is now in network/ modules:
+// - WiFiManager: WiFi connection and AP mode
+// - CaptivePortal: DNS server and detection endpoints
+// - ConfigWebServer: Web interface handlers
 
 // ============================================================================
 // Golemio API Call - Queries each stop separately and sorts results
 // ============================================================================
 void fetchDepartures()
 {
-    if (!wifiConnected || strlen(config.apiKey) == 0 || strlen(config.stopIds) == 0)
+    if (!wifiManager.isConnected() || strlen(config.apiKey) == 0 || strlen(config.stopIds) == 0)
     {
         return;
     }
@@ -278,492 +263,42 @@ void fetchDepartures()
 }
 
 // ============================================================================
-// Web Server Handlers
+// Callback Functions for ConfigWebServer
 // ============================================================================
 
-// HTML page template
-const char *HTML_HEADER = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Transport Display Config</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-               max-width: 600px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; }
-        h1 { color: #00d4ff; }
-        h2 { color: #ff6b6b; margin-top: 30px; }
-        .card { background: #16213e; border-radius: 10px; padding: 20px; margin: 15px 0; }
-        label { display: block; margin: 10px 0 5px; color: #aaa; font-size: 0.9em; }
-        input, select { width: 100%; padding: 12px; border: 1px solid #333; border-radius: 5px; 
-                        background: #0f0f23; color: #fff; box-sizing: border-box; font-size: 16px; }
-        input:focus { border-color: #00d4ff; outline: none; }
-        button { background: #00d4ff; color: #000; padding: 15px 30px; border: none; 
-                 border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 20px; width: 100%; }
-        button:hover { background: #00a8cc; }
-        button.danger { background: #ff4757; color: #fff; }
-        button.danger:hover { background: #ff6b81; }
-        .status { padding: 15px; border-radius: 5px; margin: 10px 0; }
-        .status.ok { background: #2ed573; color: #000; }
-        .status.error { background: #ff4757; }
-        .status.warn { background: #ffa502; color: #000; }
-        .info { color: #888; font-size: 0.85em; margin-top: 5px; }
-        a { color: #00d4ff; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        @media (max-width: 500px) { .grid { grid-template-columns: 1fr; } }
-    </style>
-</head>
-<body>
-)rawliteral";
-
-const char *HTML_FOOTER = "</body></html>";
-
-void handleRoot()
+void onConfigSave(const Config& newConfig, bool wifiChanged)
 {
-    String html = HTML_HEADER;
-    html += "<h1>🚌 Transport Display</h1>";
-
-    // AP Mode banner
-    if (apModeActive)
-    {
-        html += "<div class='card' style='background: #ff6b6b; color: #fff;'>";
-        html += "<h2 style='color: #fff; margin-top: 0;'>⚠️ Setup Mode</h2>";
-        html += "<p>Device is in Access Point mode. Configure WiFi credentials below to connect to your network.</p>";
-        html += "<p><strong>AP Name:</strong> " + String(apSSID) + "</p>";
-        html += "</div>";
-    }
-
-    // Status card
-    html += "<div class='card'>";
-    html += "<h2>Status</h2>";
-
-    if (apModeActive)
-    {
-        html += "<div class='status warn'>AP Mode Active - Not connected to WiFi</div>";
-        html += "<p><strong>Connected clients:</strong> " + String(WiFi.softAPgetStationNum()) + "</p>";
-    }
-    else if (wifiConnected)
-    {
-        html += "<div class='status ok'>WiFi Connected: " + WiFi.localIP().toString() + "</div>";
-    }
-    else
-    {
-        html += "<div class='status error'>WiFi Disconnected</div>";
-    }
-
-    if (!apModeActive)
-    {
-        if (strlen(config.apiKey) > 0)
-        {
-            if (apiError)
-            {
-                html += "<div class='status error'>API Error: " + String(apiErrorMsg) + "</div>";
-            }
-            else
-            {
-                html += "<div class='status ok'>API OK - " + String(departureCount) + " departures</div>";
-            }
-        }
-        else
-        {
-            html += "<div class='status warn'>API Key not configured</div>";
-        }
-
-        if (stopName[0])
-        {
-            html += "<p><strong>Stop:</strong> " + String(stopName) + "</p>";
-        }
-    }
-
-    html += "<p><strong>Free Memory:</strong> " + String(ESP.getFreeHeap()) + " bytes</p>";
-    html += "</div>";
-
-    // Configuration form
-    html += "<div class='card'>";
-    html += "<h2>Configuration</h2>";
-    html += "<form method='POST' action='/save'>";
-
-    html += "<label>WiFi SSID</label>";
-    html += "<input type='text' name='ssid' value='" + String(config.wifiSsid) + "' required placeholder='Your WiFi network name'>";
-
-    html += "<label>WiFi Password</label>";
-    html += "<input type='password' name='password' placeholder='Enter WiFi password'>";
-    if (!apModeActive)
-    {
-        html += "<p class='info'>Leave empty to keep current password</p>";
-    }
-    else
-    {
-        html += "<p class='info'>Enter your WiFi password</p>";
-    }
-
-    html += "<label>Golemio API Key</label>";
-    html += "<input type='text' name='apikey' value='" + String(config.apiKey) + "' required placeholder='Your Golemio API key'>";
-    html += "<p class='info'>Get your API key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
-
-    html += "<label>Stop ID(s)</label>";
-    html += "<input type='text' name='stops' value='" + String(config.stopIds) + "' required placeholder='e.g., U693Z2P'>";
-    html += "<p class='info'>Comma-separated PID stop IDs. Find IDs at <a href='http://data.pid.cz/stops/xml/StopsByName.xml' target='_blank'>PID data</a></p>";
-
-    html += "<div class='grid'>";
-    html += "<div><label>Refresh Interval (sec)</label>";
-    html += "<input type='number' name='refresh' value='" + String(config.refreshInterval) + "' min='10' max='300'></div>";
-
-    html += "<div><label>Number of Departures</label>";
-    html += "<input type='number' name='numdeps' value='" + String(config.numDepartures) + "' min='1' max='6'></div>";
-
-    html += "<div><label>Min Departure Time (min)</label>";
-    html += "<input type='number' name='mindeptime' value='" + String(config.minDepartureTime) + "' min='0' max='30'></div>";
-
-    html += "<div><label>Display Brightness (0-255)</label>";
-    html += "<input type='number' name='brightness' value='" + String(config.brightness) + "' min='0' max='255'></div>";
-    html += "</div>";
-
-    if (apModeActive)
-    {
-        html += "<button type='submit'>Save & Connect to WiFi</button>";
-    }
-    else
-    {
-        html += "<button type='submit'>Save Configuration</button>";
-    }
-    html += "</form>";
-    html += "</div>";
-
-    // Actions
-    if (!apModeActive)
-    {
-        html += "<div class='card'>";
-        html += "<h2>Actions</h2>";
-        html += "<form method='POST' action='/refresh' style='display:inline'>";
-        html += "<button type='submit'>Refresh Now</button>";
-        html += "</form>";
-        html += "<form method='POST' action='/reboot' style='display:inline; margin-top:10px'>";
-        html += "<button type='submit' class='danger'>Reboot Device</button>";
-        html += "</form>";
-        html += "</div>";
-    }
-
-    html += HTML_FOOTER;
-    server.send(200, "text/html", html);
-}
-
-void handleSave()
-{
-    bool wifiChanged = false;
-
-    if (server.hasArg("ssid"))
-    {
-        String newSsid = server.arg("ssid");
-        if (newSsid != config.wifiSsid)
-        {
-            wifiChanged = true;
-        }
-        strlcpy(config.wifiSsid, newSsid.c_str(), sizeof(config.wifiSsid));
-    }
-    if (server.hasArg("password") && server.arg("password").length() > 0)
-    {
-        strlcpy(config.wifiPassword, server.arg("password").c_str(), sizeof(config.wifiPassword));
-        wifiChanged = true;
-    }
-    if (server.hasArg("apikey"))
-    {
-        strlcpy(config.apiKey, server.arg("apikey").c_str(), sizeof(config.apiKey));
-    }
-    if (server.hasArg("stops"))
-    {
-        strlcpy(config.stopIds, server.arg("stops").c_str(), sizeof(config.stopIds));
-    }
-    if (server.hasArg("refresh"))
-    {
-        config.refreshInterval = server.arg("refresh").toInt();
-        if (config.refreshInterval < 10)
-            config.refreshInterval = 10;
-        if (config.refreshInterval > 300)
-            config.refreshInterval = 300;
-    }
-    if (server.hasArg("numdeps"))
-    {
-        config.numDepartures = server.arg("numdeps").toInt();
-        if (config.numDepartures < 1)
-            config.numDepartures = 1;
-        if (config.numDepartures > MAX_DEPARTURES)
-            config.numDepartures = MAX_DEPARTURES;
-    }
-    if (server.hasArg("mindeptime"))
-    {
-        config.minDepartureTime = server.arg("mindeptime").toInt();
-        if (config.minDepartureTime < 0)
-            config.minDepartureTime = 0;
-        if (config.minDepartureTime > 30)
-            config.minDepartureTime = 30;
-    }
-    if (server.hasArg("brightness"))
-    {
-        config.brightness = server.arg("brightness").toInt();
-        if (config.brightness < 0)
-            config.brightness = 0;
-        if (config.brightness > 255)
-            config.brightness = 255;
-        // Apply brightness immediately
-        displayManager.setBrightness(config.brightness);
-    }
-
-    config.configured = true;
+    // Update config
+    config = newConfig;
     saveConfig(config);
 
-    // If in AP mode or WiFi changed, attempt to connect to the new network
-    if (apModeActive || wifiChanged)
+    // Apply brightness immediately
+    displayManager.setBrightness(config.brightness);
+
+    if (wifiChanged)
     {
-        String html = HTML_HEADER;
-        html += "<h1>⏳ Connecting...</h1>";
-        html += "<p>Attempting to connect to WiFi network: <strong>" + String(config.wifiSsid) + "</strong></p>";
-        html += "<p>Please wait... The device will restart and connect to the new network.</p>";
-        html += "<p>If connection fails, the device will return to AP mode.</p>";
-        html += "<div class='card'>";
-        html += "<p>After successful connection, access the device at its new IP address on your network.</p>";
-        html += "</div>";
-        html += HTML_FOOTER;
-        server.send(200, "text/html", html);
-
-        delay(1000);
-
         // Restart to apply new WiFi settings
+        delay(1000);
         ESP.restart();
     }
     else
     {
-        // Normal save without WiFi change
-        String html = HTML_HEADER;
-        html += "<h1>✅ Configuration Saved</h1>";
-        html += "<p>Settings have been saved. The device will apply them immediately.</p>";
-        html += "<p><a href='/'>← Back to Dashboard</a></p>";
-        html += HTML_FOOTER;
-        server.send(200, "text/html", html);
-
-        // Trigger immediate refresh
+        // Trigger immediate API refresh
         lastApiCall = 0;
     }
 }
 
-void handleRefresh()
+void onRefresh()
 {
     lastApiCall = 0; // Force immediate refresh
-    server.sendHeader("Location", "/");
-    server.send(302, "text/plain", "");
 }
 
-void handleReboot()
+void onReboot()
 {
-    String html = HTML_HEADER;
-    html += "<h1>🔄 Rebooting...</h1>";
-    html += "<p>The device is rebooting. Please wait a few seconds.</p>";
-    html += "<script>setTimeout(function(){ window.location='/'; }, 5000);</script>";
-    html += HTML_FOOTER;
-    server.send(200, "text/html", html);
     delay(500);
     ESP.restart();
 }
 
-void handleNotFound()
-{
-    // Captive portal redirect - redirect all unknown requests to root
-    if (apModeActive)
-    {
-        server.sendHeader("Location", "http://192.168.4.1/");
-        server.send(302, "text/plain", "");
-    }
-    else
-    {
-        server.sendHeader("Location", "/");
-        server.send(302, "text/plain", "");
-    }
-}
-
-// ============================================================================
-// AP Mode Functions
-// ============================================================================
-void generateRandomPassword()
-{
-    // Generate 8-character alphanumeric password
-    const char charset[] = "abcdefghjkmnpqrstuvwxyz23456789"; // Excluded confusing chars: i,l,o,0,1
-    randomSeed(esp_random());                                 // Use hardware RNG
-
-    for (int i = 0; i < 8; i++)
-    {
-        apPassword[i] = charset[random(0, strlen(charset))];
-    }
-    apPassword[8] = '\0';
-}
-
-void generateAPName()
-{
-    // Create unique AP name using last 4 chars of MAC
-    uint8_t mac[6];
-    WiFi.macAddress(mac);
-    snprintf(apSSID, sizeof(apSSID), "%s%02X%02X", AP_SSID_PREFIX, mac[4], mac[5]);
-}
-
-void startAPMode()
-{
-    logTimestamp();
-    Serial.println("Starting AP Mode...");
-
-    // Generate credentials
-    generateAPName();
-    generateRandomPassword();
-
-    // Stop any existing WiFi connection
-    WiFi.disconnect(true);
-    delay(100);
-
-    // Configure AP
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(apSSID, apPassword);
-
-    // Configure AP IP (default is 192.168.4.1)
-    IPAddress apIP(192, 168, 4, 1);
-    IPAddress gateway(192, 168, 4, 1);
-    IPAddress subnet(255, 255, 255, 0);
-    WiFi.softAPConfig(apIP, gateway, subnet);
-
-    // Start DNS server for captive portal (redirect all domains to AP IP)
-    dnsServer.start(DNS_PORT, "*", apIP);
-
-    apModeActive = true;
-    wifiConnected = false;
-
-    logTimestamp();
-    Serial.println("AP Mode Active!");
-    Serial.print("  SSID: ");
-    Serial.println(apSSID);
-    Serial.print("  Password: ");
-    Serial.println(apPassword);
-    Serial.print("  IP: ");
-    Serial.println(WiFi.softAPIP());
-
-    // Update display with AP credentials
-    needsDisplayUpdate = true;
-}
-
-void stopAPMode()
-{
-    if (apModeActive)
-    {
-        logTimestamp();
-        Serial.println("Stopping AP Mode...");
-
-        dnsServer.stop();
-        WiFi.softAPdisconnect(true);
-        apModeActive = false;
-
-        delay(100);
-    }
-}
-
-// Captive portal detection endpoints
-void handleCaptivePortal()
-{
-    server.sendHeader("Location", "http://192.168.4.1/");
-    server.send(302, "text/plain", "");
-}
-
-void setupCaptivePortalHandlers()
-{
-    // Android captive portal detection
-    server.on("/generate_204", handleCaptivePortal);
-    server.on("/gen_204", handleCaptivePortal);
-
-    // iOS/macOS captive portal detection
-    server.on("/hotspot-detect.html", handleCaptivePortal);
-    server.on("/library/test/success.html", handleCaptivePortal);
-
-    // Windows captive portal detection
-    server.on("/ncsi.txt", handleCaptivePortal);
-    server.on("/connecttest.txt", handleCaptivePortal);
-    server.on("/redirect", handleCaptivePortal);
-
-    // Firefox captive portal detection
-    server.on("/success.txt", handleCaptivePortal);
-}
-
-void setupWebServer()
-{
-    server.on("/", HTTP_GET, handleRoot);
-    server.on("/save", HTTP_POST, handleSave);
-    server.on("/refresh", HTTP_POST, handleRefresh);
-    server.on("/reboot", HTTP_POST, handleReboot);
-
-    // Captive portal handlers
-    setupCaptivePortalHandlers();
-
-    server.onNotFound(handleNotFound);
-    server.begin();
-
-    logTimestamp();
-    Serial.println("Web server started");
-}
-
-// ============================================================================
-// WiFi Connection
-// ============================================================================
-void connectWiFi()
-{
-    logTimestamp();
-    Serial.print("WiFi: Connecting to ");
-    Serial.println(config.wifiSsid);
-
-    displayManager.drawStatus("Connecting WiFi...", config.wifiSsid, COLOR_YELLOW);
-
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(config.wifiSsid, config.wifiPassword);
-
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < WIFI_CONNECT_ATTEMPTS)
-    {
-        delay(500);
-        Serial.print(".");
-
-        // Update display with attempt count
-        if (attempts % 4 == 0)
-        {
-            char msg[32];
-            snprintf(msg, sizeof(msg), "Attempt %d/%d", attempts + 1, WIFI_CONNECT_ATTEMPTS);
-            displayManager.drawStatus("Connecting WiFi...", msg, COLOR_YELLOW);
-        }
-
-        attempts++;
-    }
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        wifiConnected = true;
-        apModeActive = false;
-        logTimestamp();
-        Serial.println("\nWiFi: Connected!");
-        Serial.print("IP: ");
-        Serial.println(WiFi.localIP());
-
-        char ipStr[32];
-        sprintf(ipStr, "IP: %s", WiFi.localIP().toString().c_str());
-        displayManager.drawStatus("WiFi Connected!", ipStr, COLOR_GREEN);
-        delay(1500);
-    }
-    else
-    {
-        wifiConnected = false;
-        logTimestamp();
-        Serial.println("\nWiFi: Connection failed!");
-        Serial.println("Starting AP mode for configuration...");
-
-        displayManager.drawStatus("WiFi Failed!", "Starting AP mode...", COLOR_RED);
-        delay(1500);
-
-        // Fall back to AP mode
-        startAPMode();
-    }
-}
 
 // ============================================================================
 // Setup
@@ -793,15 +328,51 @@ void setup()
 
     displayManager.drawStatus("Starting...", "", COLOR_WHITE);
 
-    // Connect to WiFi (will fall back to AP mode if fails)
-    connectWiFi();
-
-    // Start web server (works in both STA and AP mode)
-    setupWebServer();
-
-    if (wifiConnected && !apModeActive)
+    // Try to connect to WiFi (will fall back to AP mode if fails)
+    if (!wifiManager.connectSTA(config, 20, 500))
     {
-        // Setup NTP time
+        // Connection failed, start AP mode
+        displayManager.drawStatus("WiFi Failed!", "Starting AP mode...", COLOR_RED);
+        delay(1500);
+
+        if (!wifiManager.startAP())
+        {
+            Serial.println("AP Mode failed to start!");
+            displayManager.drawStatus("AP Mode Failed!", "", COLOR_RED);
+            return;
+        }
+
+        // Start captive portal
+        if (!captivePortal.begin(wifiManager.getAPIP()))
+        {
+            Serial.println("Captive portal failed to start!");
+        }
+    }
+    else
+    {
+        // WiFi connected successfully
+        char ipStr[32];
+        sprintf(ipStr, "IP: %s", WiFi.localIP().toString().c_str());
+        displayManager.drawStatus("WiFi Connected!", ipStr, COLOR_GREEN);
+        delay(1500);
+    }
+
+    // Initialize web server with callbacks
+    webServer.setCallbacks(onConfigSave, onRefresh, onReboot);
+    if (!webServer.begin())
+    {
+        Serial.println("Web server failed to start!");
+    }
+
+    // Setup captive portal detection handlers
+    if (wifiManager.isAPMode())
+    {
+        captivePortal.setupDetectionHandlers(webServer.getServer());
+    }
+
+    // Setup NTP time if connected to WiFi
+    if (wifiManager.isConnected() && !wifiManager.isAPMode())
+    {
         logTimestamp();
         Serial.println("Syncing time...");
         initTimeSync();
@@ -835,16 +406,23 @@ void setup()
 void loop()
 {
     // Handle DNS for captive portal (AP mode only)
-    if (apModeActive)
+    if (wifiManager.isAPMode())
     {
-        dnsServer.processNextRequest();
+        captivePortal.processRequests();
     }
 
     // Handle web server requests
-    server.handleClient();
+    webServer.handleClient();
+
+    // Update web server state for status display
+    webServer.updateState(&config,
+                         wifiManager.isConnected(), wifiManager.isAPMode(),
+                         wifiManager.getAPSSID(), wifiManager.getAPPassword(), wifiManager.getAPClientCount(),
+                         apiError, apiErrorMsg,
+                         departureCount, stopName);
 
     // Skip WiFi monitoring and API calls in AP mode
-    if (apModeActive)
+    if (wifiManager.isAPMode())
     {
         // Update display periodically in AP mode
         if (millis() - lastDisplayUpdate >= 5000)
@@ -857,8 +435,8 @@ void loop()
         {
             needsDisplayUpdate = false;
             displayManager.updateDisplay(departures, departureCount, config.numDepartures,
-                                        wifiConnected, apModeActive,
-                                        apSSID, apPassword,
+                                        wifiManager.isConnected(), wifiManager.isAPMode(),
+                                        wifiManager.getAPSSID(), wifiManager.getAPPassword(),
                                         apiError, apiErrorMsg,
                                         stopName, config.configured && strlen(config.apiKey) > 0);
         }
@@ -868,9 +446,11 @@ void loop()
     }
 
     // Check WiFi connection (STA mode only)
-    if (WiFi.status() != WL_CONNECTED && wifiConnected)
+    static bool wasConnected = false;
+    bool isConnected = wifiManager.isConnected();
+
+    if (!isConnected && wasConnected)
     {
-        wifiConnected = false;
         logTimestamp();
         Serial.println("WiFi: Disconnected!");
         needsDisplayUpdate = true;
@@ -878,23 +458,21 @@ void loop()
         // Attempt reconnection
         static unsigned long lastReconnectAttempt = 0;
         if (millis() - lastReconnectAttempt > 30000)
-        { // Try every 30 seconds
+        {
             lastReconnectAttempt = millis();
-            logTimestamp();
-            Serial.println("WiFi: Attempting reconnection...");
-            WiFi.reconnect();
+            wifiManager.attemptReconnect();
         }
     }
-    else if (WiFi.status() == WL_CONNECTED && !wifiConnected)
+    else if (isConnected && !wasConnected)
     {
-        wifiConnected = true;
         logTimestamp();
         Serial.println("WiFi: Reconnected!");
         needsDisplayUpdate = true;
     }
+    wasConnected = isConnected;
 
     // Periodic API calls (only when connected and not in AP mode)
-    if (wifiConnected && config.configured && strlen(config.apiKey) > 0)
+    if (wifiManager.isConnected() && config.configured && strlen(config.apiKey) > 0)
     {
         unsigned long now = millis();
         unsigned long interval = (unsigned long)config.refreshInterval * 1000;
@@ -911,8 +489,8 @@ void loop()
     {
         needsDisplayUpdate = false;
         displayManager.updateDisplay(departures, departureCount, config.numDepartures,
-                                    wifiConnected, apModeActive,
-                                    apSSID, apPassword,
+                                    wifiManager.isConnected(), wifiManager.isAPMode(),
+                                    wifiManager.getAPSSID(), wifiManager.getAPPassword(),
                                     apiError, apiErrorMsg,
                                     stopName, config.configured && strlen(config.apiKey) > 0);
     }
@@ -931,9 +509,9 @@ void loop()
         lastStatusLog = millis();
         logTimestamp();
         Serial.print("STATUS: WiFi=");
-        Serial.print(wifiConnected ? "OK" : "FAIL");
+        Serial.print(wifiManager.isConnected() ? "OK" : "FAIL");
         Serial.print(" | AP=");
-        Serial.print(apModeActive ? "ON" : "OFF");
+        Serial.print(wifiManager.isAPMode() ? "ON" : "OFF");
         Serial.print(" | Deps=");
         Serial.print(departureCount);
         Serial.print(" | Heap=");
