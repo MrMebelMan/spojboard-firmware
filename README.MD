@@ -19,6 +19,7 @@ No external server required - standalone operation with web-based configuration!
 - **Real-time Updates**: Shows line number, destination, and ETA in minutes
 - **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles
 - **Color-coded Lines**: Colored line numbers on black backgrounds for high contrast and readability
+- **Firmware Updates**: GitHub-based OTA updates with user confirmation - check for new releases directly from the web interface
 
 ## Hardware
 
@@ -80,7 +81,10 @@ The built-in web server provides:
   - Minimum departure time (0-30 minutes) - filter out departures too soon to catch
 - **Actions**:
   - Force refresh
+  - Update firmware (manual .bin upload)
+  - Check for updates (GitHub releases)
   - Reboot device
+  - Factory reset
 
 ### AP Mode vs Normal Mode
 
@@ -168,6 +172,76 @@ The built-in web server provides:
 - Check HUB75 cable connections
 - Verify panel chain order
 
+## Firmware Updates
+
+SpojBoard supports two methods for updating firmware:
+
+### Method 1: GitHub Updates (Recommended)
+
+Check for and install new releases directly from GitHub:
+
+1. **Open the web interface** at `http://[device-ip]/`
+2. **Click "Check for Updates"** in the Actions section
+3. **Review the update** (version, release notes, file size)
+4. **Click "Download & Install"** if update is available
+5. **Wait for download** - progress shown on LED matrix
+6. **Device reboots automatically** with new firmware
+
+**Features:**
+- ✅ Automatic version checking
+- ✅ Displays release notes before installing
+- ✅ Secure HTTPS download with MD5 validation
+- ✅ Progress display on LED matrix
+- ✅ Safe - failed update doesn't brick the device
+
+**Requirements:**
+- Device must be connected to WiFi (not in AP mode)
+- Internet access to github.com
+
+### Method 2: Manual Upload
+
+Upload a firmware .bin file manually:
+
+1. **Get the firmware file** (e.g., `spojboard-r2-abc12345.bin`)
+2. **Open web interface** and click "Update Firmware"
+3. **Select .bin file** and click "Upload Firmware"
+4. **Wait for upload** - progress shown on screen
+5. **Device reboots** after successful upload
+
+**Use cases:**
+- Installing custom firmware builds
+- Offline updates
+- Development testing
+
+### Update Security
+
+All firmware updates (both methods):
+- ❌ **Disabled in AP mode** (prevents unauthorized access)
+- ✅ **MD5 validation** (corrupted firmware rejected)
+- ✅ **HTTPS only** for GitHub downloads
+- ✅ **Separate OTA partition** (failed update doesn't affect running firmware)
+- ✅ **User confirmation required** (no automatic updates)
+
+### Troubleshooting Updates
+
+**"Updates not available in AP mode"**
+- Connect device to your WiFi network first
+- AP mode blocks updates for security
+
+**"No update available"**
+- Your device is already running the latest version
+- Check [GitHub Releases](https://github.com/xbach/spojboard-firmware/releases) to verify
+
+**"Download failed" or "Installation failed"**
+- Check internet connection
+- Try again - download may have been interrupted
+- Verify you have enough space (firmware ~1-2 MB)
+
+**"GitHub API error" or "Rate limit exceeded"**
+- GitHub limits: 60 requests per hour for unauthenticated users
+- Wait an hour and try again
+- This is normal and not a device issue
+
 ## Architecture
 
 The codebase follows a modular, layered architecture with zero circular dependencies:
@@ -187,6 +261,8 @@ src/
 │   ├── WiFiManager.h/cpp            # WiFi connection & AP mode
 │   ├── CaptivePortal.h/cpp          # DNS server & captive portal
 │   ├── ConfigWebServer.h/cpp        # Web interface handlers
+│   ├── OTAUpdateManager.h/cpp       # OTA firmware upload handling
+│   ├── GitHubOTA.h/cpp              # GitHub releases integration
 └── utils/
     ├── Logger.h/cpp                 # Logging utilities
     ├── TimeUtils.h/cpp              # NTP sync & time formatting
@@ -314,10 +390,10 @@ make
 ### Integration Steps
 
 1. **Generate the font file** with fontconvert8
-2. **Copy to `/fonts` directory** in your project
+2. **Copy to `src/fonts` directory** in your project
 3. **Include in the appropriate module** (e.g., `src/display/DisplayManager.cpp`):
    ```cpp
-   #include "../../fonts/YourFont12pt8b.h"
+   #include "../fonts/YourFont12pt8b.h"
    ```
 4. **Set as active font** in your display code:
    ```cpp
@@ -334,7 +410,7 @@ The original fontconvert8 tool may require modifications to compile on Apple Sil
 
 ### Fine-Tuning with GFX Font Customiser
 
-After generating fonts with fontconvert8, you can fine-tune individual characters using the [Adafruit GFX Font Customiser](https://tchapi.github.io/Adafruit-GFX-Font-Customiser/).
+After generating fonts with fontconvert8, you can fine-tune individual characters using the [Adafruit GFX Font Customiser by tchapi](https://tchapi.github.io/Adafruit-GFX-Font-Customiser/).
 
 This web-based tool allows you to:
 - **Visualize** the generated font in a browser
@@ -372,6 +448,7 @@ See the LICENSE file for full details.
 - [Golemio API](https://api.golemio.cz) - Prague open data platform
 - [ESP32-HUB75-MatrixPanel-DMA](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA) - Display driver
 - [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) - Graphics primitives and font rendering
+- [Adafruit GFX Font Customiser by tchapi](https://tchapi.github.io/Adafruit-GFX-Font-Customiser/)
 - [Michel Deslierres](https://sigmdel.ca/michel/program/misc/gfxfont_8bit_en.html) - Original UTF-8 to ISO-8859-2 conversion code
 - [Petr Brouzda - fontconvert8-iso8859-2](https://github.com/petrbrouzda/fontconvert8-iso8859-2) - Font conversion tool and UTF-8 conversion implementation
 - [Claude Code](https://claude.ai/code) - AI-assisted development and code refinement

@@ -108,6 +108,7 @@ private:
     void handleSave();
     void handleRefresh();
     void handleReboot();
+    void handleClearConfig();   // POST: clear all settings (factory reset)
     void handleUpdate();        // GET: show OTA upload form
     void handleUpdateUpload();  // POST: handle firmware upload
     void handleCheckUpdate();   // GET: check GitHub for updates (AJAX)

@@ -52,3 +52,17 @@ void saveConfig(const Config& config)
     logTimestamp();
     Serial.println("Config saved");
 }
+
+void clearConfig()
+{
+    Preferences preferences;
+    preferences.begin("transport", false); // Read-write
+
+    // Clear all keys in the namespace
+    preferences.clear();
+
+    preferences.end();
+
+    logTimestamp();
+    Serial.println("All configuration cleared - device will boot into AP mode on restart");
+}

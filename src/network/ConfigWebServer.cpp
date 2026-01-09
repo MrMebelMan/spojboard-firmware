@@ -90,6 +90,7 @@ bool ConfigWebServer::begin()
     server->on("/save", HTTP_POST, [this]() { handleSave(); });
     server->on("/refresh", HTTP_POST, [this]() { handleRefresh(); });
     server->on("/reboot", HTTP_POST, [this]() { handleReboot(); });
+    server->on("/clear-config", HTTP_POST, [this]() { handleClearConfig(); });
     server->on("/update", HTTP_GET, [this]() { handleUpdate(); });
     server->on("/update", HTTP_POST,
         [this]() { handleUpdateUpload(); },  // Upload handler
@@ -315,6 +316,9 @@ void ConfigWebServer::handleRoot()
         html += "</form>";
         html += "<form method='POST' action='/reboot' style='display:inline; margin-top:10px'>";
         html += "<button type='submit' class='danger'>Reboot Device</button>";
+        html += "</form>";
+        html += "<form method='POST' action='/clear-config' onsubmit='return confirm(\"⚠️ WARNING: This will erase ALL settings and reboot into setup mode. Continue?\");' style='display:inline; margin-top:10px'>";
+        html += "<button type='submit' class='danger'>Clear All Settings</button>";
         html += "</form>";
         html += "<div id='updateStatus' style='display:none; margin-top:15px;'></div>";
         html += "</div>";
@@ -565,6 +569,27 @@ void ConfigWebServer::handleReboot()
     {
         onRebootCallback();
     }
+}
+
+void ConfigWebServer::handleClearConfig()
+{
+    String html = HTML_HEADER;
+    html += "<h1>🗑️ Clearing All Settings...</h1>";
+    html += "<div class='card' style='background: #ff6b6b; color: #fff;'>";
+    html += "<p>All configuration has been erased from flash memory.</p>";
+    html += "<p>The device will reboot into AP (setup) mode in 3 seconds.</p>";
+    html += "<p>You will need to reconfigure WiFi and API settings.</p>";
+    html += "</div>";
+    html += "<script>setTimeout(function(){ window.location='/'; }, 8000);</script>";
+    html += HTML_FOOTER;
+    server->send(200, "text/html", html);
+
+    // Clear all config from NVS
+    clearConfig();
+
+    // Reboot after a short delay
+    delay(3000);
+    ESP.restart();
 }
 
 void ConfigWebServer::handleUpdate()

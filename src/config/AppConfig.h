@@ -7,12 +7,12 @@
 // ============================================================================
 // Firmware Version
 // ============================================================================
-#define FIRMWARE_RELEASE "2"
+#define FIRMWARE_RELEASE "3"
 
 // Build ID is injected by build script (8 hex characters)
 // Generated from build timestamp using DJB2 hash algorithm
 #ifndef BUILD_ID
-#define BUILD_ID 0x00000000  // Fallback if not set by build system
+#define BUILD_ID 0x00000000 // Fallback if not set by build system
 #endif
 
 // ============================================================================
@@ -75,12 +75,18 @@ struct Config
  * Load configuration from NVS flash storage
  * @param config Reference to Config structure to populate
  */
-void loadConfig(Config& config);
+void loadConfig(Config &config);
 
 /**
  * Save configuration to NVS flash storage
  * @param config Configuration to save
  */
-void saveConfig(const Config& config);
+void saveConfig(const Config &config);
+
+/**
+ * Clear all configuration from NVS flash storage
+ * Resets device to factory defaults - will boot into AP mode on next restart
+ */
+void clearConfig();
 
 #endif // APPCONFIG_H
