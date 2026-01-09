@@ -729,6 +729,40 @@ void ConfigWebServer::githubOtaProgressCallback(size_t progress, size_t total)
     }
 }
 
+// Helper function to escape JSON strings
+String escapeJsonString(const char* str)
+{
+    String result = "";
+    if (!str) return result;
+
+    for (size_t i = 0; str[i] != '\0'; i++)
+    {
+        char c = str[i];
+        switch (c)
+        {
+            case '"':  result += "\\\""; break;
+            case '\\': result += "\\\\"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            case '\b': result += "\\b"; break;
+            case '\f': result += "\\f"; break;
+            default:
+                // Skip other control characters
+                if (c >= 0 && c < 32)
+                {
+                    // Skip control characters
+                }
+                else
+                {
+                    result += c;
+                }
+                break;
+        }
+    }
+    return result;
+}
+
 void ConfigWebServer::handleCheckUpdate()
 {
     // Block if in AP mode
@@ -744,23 +778,23 @@ void ConfigWebServer::handleCheckUpdate()
     // Check for updates
     GitHubOTA::ReleaseInfo info = githubOTA->checkForUpdate(FIRMWARE_RELEASE);
 
-    // Build JSON response
+    // Build JSON response with properly escaped strings
     String json = "{";
 
     if (info.hasError)
     {
         json += "\"available\":false,";
-        json += "\"error\":\"" + String(info.errorMsg) + "\"";
+        json += "\"error\":\"" + escapeJsonString(info.errorMsg) + "\"";
     }
     else if (info.available)
     {
         json += "\"available\":true,";
         json += "\"releaseNumber\":" + String(info.releaseNumber) + ",";
-        json += "\"releaseName\":\"" + String(info.releaseName) + "\",";
-        json += "\"releaseNotes\":\"" + String(info.releaseNotes) + "\",";
-        json += "\"fileName\":\"" + String(info.assetName) + "\",";
+        json += "\"releaseName\":\"" + escapeJsonString(info.releaseName) + "\",";
+        json += "\"releaseNotes\":\"" + escapeJsonString(info.releaseNotes) + "\",";
+        json += "\"fileName\":\"" + escapeJsonString(info.assetName) + "\",";
         json += "\"fileSize\":" + String(info.assetSize) + ",";
-        json += "\"assetUrl\":\"" + String(info.assetUrl) + "\"";
+        json += "\"assetUrl\":\"" + escapeJsonString(info.assetUrl) + "\"";
     }
     else
     {
