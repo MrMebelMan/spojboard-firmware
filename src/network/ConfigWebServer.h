@@ -108,11 +108,12 @@ private:
     void handleSave();
     void handleRefresh();
     void handleReboot();
-    void handleClearConfig();   // POST: clear all settings (factory reset)
-    void handleUpdate();        // GET: show OTA upload form
-    void handleUpdateUpload();  // POST: handle firmware upload
-    void handleCheckUpdate();   // GET: check GitHub for updates (AJAX)
-    void handleDownloadUpdate(); // POST: download and install from GitHub (AJAX)
+    void handleClearConfig();      // POST: clear all settings (factory reset)
+    void handleUpdate();           // GET: show OTA upload form
+    void handleUpdateProgress();   // POST: handle firmware upload chunks
+    void handleUpdateComplete();   // POST: handle firmware upload completion
+    void handleCheckUpdate();      // GET: check GitHub for updates (AJAX)
+    void handleDownloadUpdate();   // POST: download and install from GitHub (AJAX)
     void handleNotFound();
 
     // OTA progress callbacks (static for use as function pointers)

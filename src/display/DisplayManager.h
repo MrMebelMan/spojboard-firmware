@@ -9,6 +9,7 @@
 // Font references
 extern const GFXfont DepartureMono_Regular4pt8b;
 extern const GFXfont DepartureMono_Regular5pt8b;
+extern const GFXfont DepartureMono_Condensed5pt8b;
 
 // ============================================================================
 // Display Manager Class
@@ -86,6 +87,7 @@ private:
 
     const GFXfont* fontSmall;
     const GFXfont* fontMedium;
+    const GFXfont* fontCondensed;
 
     // Drawing functions
     void drawDeparture(int row, const Departure& dep);

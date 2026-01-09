@@ -98,10 +98,9 @@ bool ConfigWebServer::begin()
                { handleClearConfig(); });
     server->on("/update", HTTP_GET, [this]()
                { handleUpdate(); });
-    server->on("/update", HTTP_POST, [this]()
-               { handleUpdateUpload(); }, // Upload handler
-               [this]()
-               { handleUpdateUpload(); } // Same function handles chunks
+    server->on("/update", HTTP_POST,
+               [this]() { handleUpdateComplete(); },  // Completion handler
+               [this]() { handleUpdateProgress(); }   // Upload chunk handler
     );
     server->on("/check-update", HTTP_GET, [this]()
                { handleCheckUpdate(); });
@@ -757,7 +756,7 @@ void ConfigWebServer::handleClearConfig()
     html += "<h1>🗑️ Clearing All Settings...</h1>";
     html += "<div class='card' style='background: #ff6b6b; color: #fff;'>";
     html += "<p>All configuration has been erased from flash memory.</p>";
-    html += "<p>The device will reboot into AP (setup) mode in 3 seconds.</p>";
+    html += "<p>The device will reboot into AP (setup) mode in 6 seconds.</p>";
     html += "<p>You will need to reconfigure WiFi and API settings.</p>";
     html += "</div>";
     html += "<script>setTimeout(function(){ window.location='/'; }, 8000);</script>";
@@ -768,7 +767,7 @@ void ConfigWebServer::handleClearConfig()
     clearConfig();
 
     // Reboot after a short delay
-    delay(3000);
+    delay(6000);
     ESP.restart();
 }
 
@@ -853,8 +852,31 @@ void ConfigWebServer::otaProgressCallback(size_t progress, size_t total)
     }
 }
 
-void ConfigWebServer::handleUpdateUpload()
+void ConfigWebServer::handleUpdateProgress()
 {
+    // This function is called during upload to process chunks
+    // It should NOT send any HTTP responses
+
+    if (otaManager == nullptr)
+    {
+        return;
+    }
+
+    // Block uploads in AP mode
+    if (apModeActive)
+    {
+        return;
+    }
+
+    // Let OTA manager handle the upload with progress callback
+    otaManager->handleUpload(server, otaProgressCallback);
+}
+
+void ConfigWebServer::handleUpdateComplete()
+{
+    // This function is called once after upload completes
+    // It sends the final HTTP response
+
     if (otaManager == nullptr)
     {
         server->send(500, "text/plain", "OTA manager not initialized");
@@ -868,44 +890,36 @@ void ConfigWebServer::handleUpdateUpload()
         return;
     }
 
-    // Let OTA manager handle the upload with progress callback
-    otaManager->handleUpload(server, otaProgressCallback);
-
-    // Check if upload finished
-    HTTPUpload &upload = server->upload();
-    if (upload.status == UPLOAD_FILE_END)
+    // Check if upload succeeded or failed
+    if (strlen(otaManager->getError()) > 0)
     {
-        // Send response based on success/failure
-        if (strlen(otaManager->getError()) > 0)
-        {
-            // Error occurred
-            String html = HTML_HEADER;
-            html += "<h1>❌ Update Failed</h1>";
-            html += "<div class='card' style='background: #ff6b6b; color: #fff;'>";
-            html += "<p><strong>Error:</strong> " + String(otaManager->getError()) + "</p>";
-            html += "</div>";
-            html += "<p><a href='/update'>← Try Again</a></p>";
-            html += "<p><a href='/'>← Back to Dashboard</a></p>";
-            html += HTML_FOOTER;
-            server->send(500, "text/html", html);
-        }
-        else
-        {
-            // Success
-            String html = HTML_HEADER;
-            html += "<h1>✅ Update Successful!</h1>";
-            html += "<div class='card' style='background: #2ed573; color: #000;'>";
-            html += "<p>Firmware has been uploaded and validated successfully.</p>";
-            html += "<p>The device will reboot in 3 seconds...</p>";
-            html += "</div>";
-            html += "<script>setTimeout(function(){ window.location='/'; }, 8000);</script>";
-            html += HTML_FOOTER;
-            server->send(200, "text/html", html);
+        // Error occurred
+        String html = HTML_HEADER;
+        html += "<h1>❌ Update Failed</h1>";
+        html += "<div class='card' style='background: #ff6b6b; color: #fff;'>";
+        html += "<p><strong>Error:</strong> " + String(otaManager->getError()) + "</p>";
+        html += "</div>";
+        html += "<p><a href='/update'>← Try Again</a></p>";
+        html += "<p><a href='/'>← Back to Dashboard</a></p>";
+        html += HTML_FOOTER;
+        server->send(500, "text/html", html);
+    }
+    else
+    {
+        // Success
+        String html = HTML_HEADER;
+        html += "<h1>✅ Update Successful!</h1>";
+        html += "<div class='card' style='background: #2ed573; color: #000;'>";
+        html += "<p>Firmware has been uploaded and validated successfully.</p>";
+        html += "<p>The device will reboot in 6 seconds...</p>";
+        html += "</div>";
+        html += "<script>setTimeout(function(){ window.location='/'; }, 8000);</script>";
+        html += HTML_FOOTER;
+        server->send(200, "text/html", html);
 
-            // Reboot after a short delay
-            delay(3000);
-            ESP.restart();
-        }
+        // Reboot after a short delay
+        delay(6000);
+        ESP.restart();
     }
 }
 
@@ -1068,9 +1082,9 @@ void ConfigWebServer::handleDownloadUpdate()
         server->send(200, "application/json", "{\"success\":true,\"message\":\"Rebooting...\"}");
 
         logTimestamp();
-        Serial.println("Update successful, rebooting in 3 seconds...");
+        Serial.println("Update successful, rebooting in 6 seconds...");
 
-        delay(3000);
+        delay(6000);
         ESP.restart();
     }
     else

@@ -107,14 +107,18 @@ Transitions:
 
 - **Row-based layout**: 4 rows × 8 pixels each on 128×32 matrix
   - Rows 0-2: Departure entries (line number, destination, ETA)
-  - Row 3: Date/time status bar with comma separator (e.g., "Mon, Feb 15 14:35")
+  - Row 3: Date/time status bar with pipe separator (e.g., "Mon| Feb 15 14:35")
 - **Uniform route boxes**: All line numbers displayed in 18-pixel wide black background boxes (fits 1-3 characters)
   - Route numbers horizontally centered within boxes using `getTextBounds()` with proper x1 offset compensation
   - All destinations start at fixed X position (22 pixels) for consistent vertical alignment
-- **Dynamic destination truncation**: Text length adjusted based on ETA display width to prevent overlap
-  - ETA < 10: maxChars (16 without AC, 15 with AC)
-  - ETA 10-99: maxChars - 1 (accounts for 2-digit width)
-  - ETA >= 100: maxChars - 2 (accounts for ">1h" width)
+- **Adaptive font rendering**: Automatically switches between regular and condensed fonts for optimal display
+  - Destinations ≤16 chars (or ≤15 with AC): Regular font (DepartureMono5pt8b)
+  - Destinations >16 chars: Condensed font (DepartureMonoCondensed5pt8b) with 23-char capacity
+  - ETA always rendered in regular font for consistency
+- **Dynamic destination truncation**: Text length adjusted based on ETA display width and font choice to prevent overlap
+  - Regular font: maxChars (16 without AC, 15 with AC), reduced by 1 for 2-digit ETA or 2 for 3-digit ETA
+  - Condensed font: maxChars 23, reduced by 2 for 2-digit ETA or 3 for 3-digit ETA
+  - Ensures destinations never overlap with ETA regardless of font used
 - **Configurable line colors**: Custom color mapping system with pattern matching
   - User can configure colors via web interface (format: "LINE=COLOR,LINE=COLOR,...")
   - Supports pattern matching with trailing asterisk (e.g., "9*=CYAN" for night trams 91-99)
@@ -125,7 +129,8 @@ Transitions:
 - **Default color coding**: Hardcoded fallback colors (Metro A=green, B=yellow, C=red, S-trains=blue, night trams=cyan, etc.)
 - **Custom 8-bit ISO-8859-2 GFXfonts**:
   - `DepartureMono4pt8b` (small font) - Used for compact text, line numbers, status
-  - `DepartureMono5pt8b` (medium font) - Used for destinations, larger text
+  - `DepartureMono5pt8b` (medium font) - Used for destinations, larger text, ETAs
+  - `DepartureMonoCondensed5pt8b` (condensed font) - Automatically used for long destinations (>16 chars)
   - Full ISO-8859-2 character set (0x20-0xDF) including all Czech diacritics
   - Located in `/fonts` directory
 - **UTF-8 Conversion**: API responses in UTF-8 are automatically converted to ISO-8859-2 encoding using in-place conversion (`utf8tocp()`)
@@ -166,13 +171,21 @@ HUB75 matrix pins are hardcoded for Adafruit MatrixPortal ESP32-S3 (lines 25-40)
 ```cpp
 struct Departure {
     char line[8];           // Route short name
-    char destination[32];   // Trip headsign
+    char destination[32];   // Trip headsign (with abbreviations applied)
     int eta;                // Calculated from predicted/scheduled timestamp
     bool hasAC;             // trip.is_air_conditioned
     bool isDelayed;         // From delay.minutes field
     int delayMinutes;
 }
 ```
+
+**Destination Abbreviations**: Long Czech words are automatically shortened to fit display:
+- "Nádraží" → "Nádr." (uppercase)
+- "nádraží" → "nádr." (lowercase)
+- "Sídliště" → "Sídl."
+- "Nemocnice" → "Nem."
+
+Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to preserve diacritics.
 
 ## Hardware Constraints
 
@@ -190,7 +203,9 @@ struct Departure {
 - `POST /refresh` - Force immediate API call
 - `POST /reboot` - Device restart
 - `GET /update` - OTA firmware upload form (manual upload)
-- `POST /update` - Handle firmware file upload
+- `POST /update` - Handle firmware file upload (split into two handlers):
+  - Upload chunk handler: `handleUpdateProgress()` - processes chunks without HTTP response
+  - Completion handler: `handleUpdateComplete()` - sends final HTTP response after upload finishes
 - `GET /check-update` - Check GitHub for new releases (AJAX)
 - `POST /download-update` - Download and install from GitHub (AJAX)
 - Captive portal detection: `/generate_204`, `/hotspot-detect.html`, `/ncsi.txt`, `/success.txt`
@@ -228,7 +243,8 @@ Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, 30s refresh, 3 departure
 Located in `/src/fonts` directory:
 - **8-bit fonts (ISO-8859-2 encoding)**:
   - `DepartureMono4pt8b.h` - Small font (4pt)
-  - `DepartureMono5pt8b.h` - Medium font (5pt)
+  - `DepartureMono5pt8b.h` - Medium font (5pt) - default for destinations and ETAs
+  - `DepartureMonoCondensed5pt8b.h` - Condensed font (5pt) - automatically used for destinations >16 chars
   - Character range: 0x20-0xDF (192 printable characters)
   - Full ISO-8859-2 support for Czech, Slovak, Polish, Hungarian, etc.
 

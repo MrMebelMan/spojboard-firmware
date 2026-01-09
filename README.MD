@@ -16,7 +16,8 @@ No external server required - standalone operation with web-based configuration!
 - **Web Configuration**: Easy setup via built-in web interface
 - **Persistent Settings**: Configuration stored in ESP32 flash memory, survives reboots
 - **Full Czech Character Support**: Custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion for perfect display of Czech station names (ž, š, č, ř, ň, ť, ď, etc.)
-- **Smart Text Shortening**: Automatic shortening of long destination names (e.g., "Nádraží Hostivař" → "Nádr. Hostivař") to maximize display space
+- **Adaptive Font Rendering**: Automatically switches to condensed font for long destination names (>16 chars), fitting up to 23 characters on screen
+- **Smart Text Shortening**: Automatic shortening of long Czech words (e.g., "Nádraží" → "Nádr.", "nádraží" → "nádr.") to maximize display space
 - **Smart Filtering**: Configurable minimum departure time (default 3 minutes) to hide departures that are too soon to catch
 - **Real-time Updates**: Shows line number, destination, and ETA in minutes
 - **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles
@@ -139,7 +140,7 @@ The built-in web server provides:
 │ [31] Sídliště Řepy           12' │  Row 1
 │ [7 ] Radlická                 5' │  Row 2
 │ [A ] Depo Hostivař            2' │  Row 3
-│ Mon, Feb 15             14:35    │  Row 4 (Date/Time)
+│ Mon| Feb 15              14:35    │  Row 4 (Date/Time)
 └────────────────────────────────────┘
 ```
 
@@ -147,7 +148,8 @@ The built-in web server provides:
 - Line numbers displayed in their route color on uniform 18-pixel black background boxes (fits 1-3 characters)
 - Route numbers are horizontally centered within their boxes for consistent alignment
 - All destinations start at the same X position regardless of route length
-- Destination text dynamically truncated based on ETA display width to prevent overlap
+- Adaptive font rendering: automatically switches to condensed font for destinations longer than 16 characters
+- Destination text dynamically truncated based on ETA display width and font choice to prevent overlap
 - High contrast design optimized for LED matrix visibility
 
 ### AP Setup Mode
@@ -360,10 +362,13 @@ When multiple stop IDs are configured (comma-separated), the system:
 This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from. The 1-second delay between API calls helps avoid rate limiting and reduces load on the Golemio API servers.
 
 ### Destination String Shortening
-To maximize display space on the 128×32 LED matrix, long Czech destination names are automatically shortened before display, like:
-- "Nádraží" → "Nádr."
+To maximize display space on the 128×32 LED matrix, long Czech destination names are automatically shortened before display:
+- "Nádraží" → "Nádr." (uppercase)
+- "nádraží" → "nádr." (lowercase)
+- "Sídliště" → "Sídl."
+- "Nemocnice" → "Nem."
 
-The shortening is applied before UTF-8 to ISO-8859-2 conversion, ensuring Czech diacritics are preserved correctly.
+Combined with adaptive font rendering (condensed font for destinations >16 chars), even very long station names fit comfortably on the display. Shortening is applied before UTF-8 to ISO-8859-2 conversion, ensuring Czech diacritics are preserved correctly.
 
 ## Czech Character Support
 

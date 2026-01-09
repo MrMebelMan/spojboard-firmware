@@ -17,6 +17,7 @@ static const StringReplacement replacements[] = {
     {"Nádraží", "Nádr."},
     {"Sídliště", "Sídl."},
     {"Nemocnice", "Nem."},
+    {"nádraží", "nádr."},
 };
 static const int replacementCount = sizeof(replacements) / sizeof(replacements[0]);
 

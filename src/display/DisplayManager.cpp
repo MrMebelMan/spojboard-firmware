@@ -7,12 +7,14 @@
 // Font references from src/fonts/ directory
 #include "../fonts/DepartureMono4pt8b.h"
 #include "../fonts/DepartureMono5pt8b.h"
+#include "../fonts/DepartureMonoCondensed5pt8b.h"
 
 DisplayManager::DisplayManager()
     : display(nullptr), isDrawing(false), config(nullptr)
 {
     fontSmall = &DepartureMono_Regular4pt8b;
     fontMedium = &DepartureMono_Regular5pt8b;
+    fontCondensed = &DepartureMono_Condensed5pt8b;
 }
 
 DisplayManager::~DisplayManager()
@@ -98,15 +100,46 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
         destX += 6;
     }
 
-    // Destination
+    // Destination - use condensed font for long names
     display->setTextColor(COLOR_WHITE);
-    display->setFont(fontMedium);
+
+    int destLen = strlen(dep.destination);
+    int normalMaxChars = dep.hasAC ? 15 : 16;
+    const GFXfont* destFont;
+    int maxChars;
+    bool useCondensed = false;
+
+    if (destLen > normalMaxChars)
+    {
+        // Long destination - use condensed font
+        destFont = fontCondensed;
+        maxChars = 23;
+        useCondensed = true;
+    }
+    else
+    {
+        // Short destination - use regular font
+        destFont = fontMedium;
+        maxChars = normalMaxChars;
+        useCondensed = false;
+    }
+
+    // Adjust for ETA width (2-digit and 3-digit numbers take more space)
+    // Condensed font needs more reduction due to narrower characters
+    if (useCondensed)
+    {
+        maxChars -= (dep.eta >= 100 ? 3 : (dep.eta >= 10 ? 2 : 0));
+    }
+    else
+    {
+        maxChars -= (dep.eta >= 100 ? 2 : (dep.eta >= 10 ? 1 : 0));
+    }
+
+    display->setFont(destFont);
     display->setCursor(destX, y + 7);
 
-    // Truncate destination if too long
-    char destTrunc[20];
-    int maxChars = dep.hasAC ? 15 : 16;
-    maxChars -= (dep.eta >= 100 ? 2 : (dep.eta >= 10 ? 1 : 0));
+    // Truncate destination if needed
+    char destTrunc[24];
     strncpy(destTrunc, dep.destination, maxChars);
     destTrunc[maxChars] = '\0';
     display->print(destTrunc);
@@ -126,6 +159,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
         etaCursor = 117;
     }
 
+    display->setFont(fontMedium);
     display->setCursor(etaCursor, y + 7);
 
     // ETA color based on time
@@ -182,7 +216,7 @@ void DisplayManager::drawDateTime()
 
     // Day of week
     char dayStr[5];
-    strftime(dayStr, 5, "%a,", &timeinfo);
+    strftime(dayStr, 5, "%a|", &timeinfo);
     utf8tocp(dayStr); // Convert Czech day names
     display->setCursor(2, y + 7);
     display->print(dayStr);
