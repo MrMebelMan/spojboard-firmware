@@ -18,6 +18,7 @@ ESP32-based transit departure display that fetches real-time data from Prague's 
 - UTF-8 to ISO-8859-2 automatic conversion for API data
 - Configurable minimum departure time filter
 - Web-based configuration interface
+- GitHub-based OTA firmware updates with user confirmation
 
 ## Build & Development Commands
 
@@ -147,6 +148,10 @@ struct Departure {
 - `POST /save` - Save configuration (triggers restart if WiFi changed)
 - `POST /refresh` - Force immediate API call
 - `POST /reboot` - Device restart
+- `GET /update` - OTA firmware upload form (manual upload)
+- `POST /update` - Handle firmware file upload
+- `GET /check-update` - Check GitHub for new releases (AJAX)
+- `POST /download-update` - Download and install from GitHub (AJAX)
 - Captive portal detection: `/generate_204`, `/hotspot-detect.html`, `/ncsi.txt`, `/success.txt`
 - `404 handler` - Redirects to root (captive portal behavior)
 
@@ -219,3 +224,213 @@ All fonts are stored in PROGMEM to save RAM.
 
 **Font Generation:**
 8-bit fonts are generated using the [fontconvert8-iso8859-2](https://github.com/petrbrouzda/fontconvert8-iso8859-2) tool with ISO-8859-2 encoding, which shifts extended characters (0xA0-0xFF) by -32 to fit in the 0x80-0xDF range, allowing full 8-bit character coverage.
+
+## OTA Update System
+
+### Overview
+
+SpojBoard includes two methods for firmware updates:
+1. **Manual Upload**: Upload .bin file via web interface (existing)
+2. **GitHub Updates**: Check for and download new releases from GitHub (new)
+
+Both methods use the ESP32's built-in OTA partition system and are **disabled in AP mode** for security.
+
+### GitHub OTA Update System
+
+Located in `/src/network/GitHubOTA.{h,cpp}` - standalone class for GitHub releases integration.
+
+**Architecture:**
+```
+User clicks "Check for Updates"
+    → GitHubOTA::checkForUpdate()
+    → GitHub API: /repos/xbach/spojboard-firmware/releases/latest
+    → Parse JSON, compare versions
+    → Return ReleaseInfo struct
+    → Display update card in UI
+User clicks "Download & Install"
+    → GitHubOTA::downloadAndInstall()
+    → Stream firmware from GitHub to OTA partition
+    → Progress displayed on LED matrix
+    → MD5 validation via Update.end(true)
+    → Auto-reboot on success
+```
+
+**Key Files:**
+- `/src/network/GitHubOTA.h` - Class definition with ReleaseInfo struct
+- `/src/network/GitHubOTA.cpp` - Implementation with streaming download
+- `/src/config/AppConfig.h` - GitHub repository constants
+
+### GitHubOTA Class
+
+**ReleaseInfo Struct:**
+```cpp
+struct ReleaseInfo {
+    bool available;           // Update available?
+    bool hasError;           // API error occurred?
+    char errorMsg[128];      // Error message
+    int releaseNumber;       // Parsed release number (1, 2, 3...)
+    char tagName[32];        // GitHub tag (e.g., "r1", "r2")
+    char releaseName[64];    // Human-readable name
+    char releaseNotes[512];  // Truncated release body
+    char assetUrl[256];      // .bin download URL
+    char assetName[64];      // Filename
+    size_t assetSize;        // File size in bytes
+};
+```
+
+**Public Methods:**
+- `ReleaseInfo checkForUpdate(const char* currentRelease)` - Query GitHub API
+- `bool downloadAndInstall(const char* assetUrl, size_t expectedSize, ProgressCallback onProgress)` - Stream and flash firmware
+
+**Private Helpers:**
+- `int parseReleaseNumber(const char* tagName)` - Extract number from "r1" → 1
+- `bool findBinaryAsset(JsonDocument& doc, ...)` - Find .bin file in release assets
+- `bool validateFirmwareFilename(const char* filename)` - Validate pattern
+
+### Version Comparison
+
+**Current Version:** `FIRMWARE_RELEASE` from AppConfig.h (e.g., "1")
+**GitHub Tag:** Extract from `tag_name` field (e.g., "r2" → 2)
+**Logic:** Compare as integers - if GitHub version > current version, update available
+
+**Example:**
+- Current: "1"
+- GitHub tag: "r2" → parsed as 2
+- Result: Update available
+
+### GitHub API Integration
+
+**Endpoint:** `https://api.github.com/repos/xbach/spojboard-firmware/releases/latest`
+**Authentication:** None (60 requests/hour unauthenticated - sufficient for manual checks)
+**Timeout:** 30 seconds (HTTP_TIMEOUT_MS)
+**JSON Buffer:** 8KB DynamicJsonDocument
+
+**Response Structure:**
+```json
+{
+  "tag_name": "r2",
+  "name": "Release 2",
+  "body": "## Release notes...",
+  "assets": [
+    {
+      "name": "spojboard-r2-a1b2c3d4.bin",
+      "size": 1234567,
+      "browser_download_url": "https://github.com/.../download/..."
+    }
+  ]
+}
+```
+
+### Streaming Download
+
+**Critical Design:** Firmware (~1-2 MB) is streamed directly to OTA partition without buffering entire file in RAM.
+
+**Flow:**
+1. `HTTPClient::GET(assetUrl)` - Start download
+2. `http.getStreamPtr()` - Get WiFiClient stream
+3. `Update.begin(contentLength)` - Initialize OTA
+4. Loop: `stream->readBytes(buffer, 1024)` → `Update.write(buffer, size)`
+5. `Update.end(true)` - Finalize with MD5 validation
+6. `ESP.restart()` - Reboot into new firmware
+
+**Memory Usage:**
+- Download buffer: 1KB chunks
+- JSON buffer: 8KB
+- GitHubOTA class: ~1KB overhead
+- **Total impact: ~10KB** (acceptable with ~200KB free heap)
+
+**Progress Updates:**
+- Callback every 10KB or 1% of download
+- Forwards to `DisplayManager::drawOTAProgress()`
+- LED matrix shows progress bar
+
+### Security & Validation
+
+1. **HTTPS Only:** All communication over TLS (ESP32 built-in CA store)
+2. **Filename Validation:** Regex match `spojboard-r\d+-[0-9a-f]{8}\.bin`
+3. **Size Validation:** Compare Content-Length with GitHub API reported size
+4. **MD5 Validation:** Automatic via `Update.end(true)` - firmware rejected if invalid
+5. **AP Mode Block:** Updates disabled in AP mode (security measure)
+6. **Sanity Check:** Reject if GitHub release < current release
+
+### Error Handling
+
+**HTTP Errors:**
+- 404: No releases found
+- 403: GitHub API access denied
+- 429: Rate limit exceeded (60/hour)
+- Timeout: Network too slow
+
+**Download Errors:**
+- Size mismatch: Content-Length ≠ expected size
+- Incomplete download: Connection dropped mid-transfer
+- Flash error: OTA partition write failure
+- MD5 mismatch: Corrupted download
+
+**Recovery:**
+- Failed update doesn't affect running firmware (separate OTA partition)
+- Device remains bootable even if update fails mid-flash
+- User can retry download
+
+### Web UI Integration
+
+**Dashboard Button:**
+```html
+<button id="checkUpdateBtn">Check for Updates</button>
+<div id="updateStatus"></div>
+```
+
+**JavaScript Flow:**
+1. Click button → `fetch('/check-update')`
+2. Parse JSON response
+3. If available: Show card with version, notes, size, "Download & Install" button
+4. If up-to-date: Show "You're up to date!" message
+5. If error: Show error message
+6. Click install → `fetch('/download-update', {method: 'POST', body: JSON})`
+7. Show progress UI
+8. On success: "Update installed! Rebooting..."
+9. Auto-reload page after 8 seconds
+
+**User Experience:**
+- No page refresh during checking (AJAX)
+- Real-time progress display
+- Confirmation required before download
+- Clear error messages
+
+### Release Creation Workflow
+
+**GitHub Actions:** `.github/workflows/release.yml`
+
+1. **Trigger:** Push tag matching `r*` (e.g., `r1`, `r2`)
+2. **Build:** PlatformIO builds firmware with timestamp-based build ID
+3. **Artifact:** `dist/spojboard-r{release}-{buildid}.bin`
+4. **Release:** Creates GitHub release with firmware as asset
+5. **Auto-publish:** Release published automatically
+
+**Local Build:**
+```bash
+./build.sh
+# Output: dist/spojboard-r1-37a954fd.bin
+```
+
+### Configuration
+
+**Hardcoded Repository:** `xbach/spojboard-firmware` (not user-configurable)
+
+**Constants in AppConfig.h:**
+```cpp
+#define GITHUB_REPO_OWNER "xbach"
+#define GITHUB_REPO_NAME "spojboard-firmware"
+```
+
+### Testing Updates
+
+1. Build and deploy firmware with release "1"
+2. Create GitHub release with tag "r2"
+3. Upload firmware .bin as asset
+4. Open device dashboard at `http://[device-ip]/`
+5. Click "Check for Updates"
+6. Should show update available
+7. Click "Download & Install"
+8. Watch progress on LED matrix
+9. Device reboots with new firmware
