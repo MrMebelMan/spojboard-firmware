@@ -375,4 +375,4 @@ See the LICENSE file for full details.
 - [Michel Deslierres](https://sigmdel.ca/michel/program/misc/gfxfont_8bit_en.html) - Original UTF-8 to ISO-8859-2 conversion code
 - [Petr Brouzda - fontconvert8-iso8859-2](https://github.com/petrbrouzda/fontconvert8-iso8859-2) - Font conversion tool and UTF-8 conversion implementation
 - [Claude Code](https://claude.ai/code) - AI-assisted development and code refinement
-- DepartureMono font family - Custom 8-bit GFXfonts with ISO-8859-2 character support
+- [DepartureMono font family](https://departuremono.com/) - Custom 8-bit GFXfonts with ISO-8859-2 character support
