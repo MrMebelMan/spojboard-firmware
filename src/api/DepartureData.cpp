@@ -15,9 +15,8 @@ struct StringReplacement
 // Note: Strings are in UTF-8 format (before conversion to ISO-8859-2)
 static const StringReplacement replacements[] = {
     {"Nádraží", "Nádr."},
-    // Add more replacements here as needed
-    // {"Sídliště", "Sídl."},
-    // {"Nemocnice", "Nem."},
+    {"Sídliště", "Sídl."},
+    {"Nemocnice", "Nem."},
 };
 static const int replacementCount = sizeof(replacements) / sizeof(replacements[0]);
 
