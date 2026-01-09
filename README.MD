@@ -164,6 +164,49 @@ The built-in web server provides:
 - Check HUB75 cable connections
 - Verify panel chain order
 
+## Architecture
+
+The codebase follows a modular, layered architecture with zero circular dependencies:
+
+```
+src/
+├── main.cpp                          # Application orchestration (340 lines)
+├── config/
+│   ├── AppConfig.h/cpp              # Configuration structure & NVS persistence
+├── display/
+│   ├── DisplayManager.h/cpp         # Display rendering & layout
+│   ├── DisplayColors.h/cpp          # Color system & line color mapping
+├── api/
+│   ├── GolemioAPI.h/cpp             # API client for Golemio
+│   ├── DepartureData.h/cpp          # Data structures & utilities
+├── network/
+│   ├── WiFiManager.h/cpp            # WiFi connection & AP mode
+│   ├── CaptivePortal.h/cpp          # DNS server & captive portal
+│   ├── ConfigWebServer.h/cpp        # Web interface handlers
+└── utils/
+    ├── Logger.h/cpp                 # Logging utilities
+    ├── TimeUtils.h/cpp              # NTP sync & time formatting
+    ├── gfxlatin2.h/cpp              # UTF-8 to ISO-8859-2 conversion
+    └── decodeutf8.h/cpp             # UTF-8 decoder
+```
+
+### Design Principles
+
+**Layered Dependencies** (lower layers never depend on higher layers):
+1. **Foundation Layer**: Logger, UTF-8 utilities
+2. **Data Layer**: AppConfig, DepartureData
+3. **Hardware Layer**: TimeUtils, DisplayColors, DisplayManager
+4. **Network Layer**: CaptivePortal, WiFiManager, ConfigWebServer
+5. **Business Logic**: GolemioAPI
+6. **Application**: main.cpp (orchestrates all modules)
+
+**Key Patterns**:
+- **Zero Circular Dependencies**: Strict unidirectional dependency flow
+- **Single Responsibility**: Each module has one clear purpose
+- **Callback Pattern**: Modules communicate upward via callbacks (e.g., ConfigWebServer → main.cpp)
+- **Pure Data Structures**: Config passed as parameter, not stored in modules
+- **Static Allocation**: No dynamic allocation in main loop for stability
+
 ## Technical Details
 
 ### AP Mode Credentials
@@ -182,6 +225,8 @@ The device implements captive portal detection for:
 - JSON buffer: 8KB for API responses
 - Configuration stored in NVS flash
 - Typical free heap: ~200KB
+- RAM usage: 21.4% (70KB used of 327KB)
+- Flash usage: 94.7% (1.24MB used of 1.31MB)
 
 ### Multi-Stop Behavior
 When multiple stop IDs are configured (comma-separated), the system:
@@ -215,11 +260,11 @@ We use **8-bit ISO-8859-2 fonts** with automatic UTF-8 conversion:
    - Stored as Adafruit GFX format in PROGMEM
 
 2. **UTF-8 Decoder**: Converts multi-byte UTF-8 to Unicode code points (RFC 3629)
-   - Located in `src/decodeutf8.cpp/h`
+   - Located in `src/utils/decodeutf8.cpp/h`
 
 3. **ISO-8859-2 Mapper**: Maps Unicode to ISO-8859-2 with GFX encoding
    - Characters 0xA0-0xFF are shifted by -32 to fit in 0x80-0xDF range
-   - Located in `src/gfxlatin2.cpp/h`
+   - Located in `src/utils/gfxlatin2.cpp/h`
    - In-place conversion using `utf8tocp(char* str)` function
 
 **Example conversion**:
@@ -266,13 +311,14 @@ make
 
 1. **Generate the font file** with fontconvert8
 2. **Copy to `/fonts` directory** in your project
-3. **Include in `main.cpp`**:
+3. **Include in the appropriate module** (e.g., `src/display/DisplayManager.cpp`):
    ```cpp
-   #include "../fonts/YourFont12pt8b.h"
+   #include "../../fonts/YourFont12pt8b.h"
    ```
-4. **Set as active font**:
+4. **Set as active font** in your display code:
    ```cpp
    const GFXfont *fontMedium = &YourFont12pt8b;
+   display->setFont(fontMedium);
    ```
 5. **Rebuild and flash**
 
