@@ -77,7 +77,7 @@ private:
     char apSSID[32];
     char apPassword[9]; // 8 chars + null terminator
 
-    static constexpr const char* AP_SSID_PREFIX = "TransportDisplay-";
+    static constexpr const char* AP_SSID_PREFIX = "SpojBoard-";
 
     void generateAPName();
     void generateRandomPassword();
