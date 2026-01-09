@@ -1,0 +1,59 @@
+name: Build and Release Firmware
+
+on:
+  push:
+    tags:
+      - 'r*'  # Trigger on tags like r1, r2, r10, etc.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install PlatformIO
+      run: |
+        python -m pip install --upgrade pip
+        pip install platformio
+
+    - name: Build firmware
+      run: pio run
+
+    - name: Get release number from tag
+      id: get_version
+      run: echo "RELEASE_NUM=${GITHUB_REF#refs/tags/r}" >> $GITHUB_OUTPUT
+
+    - name: Find firmware binary
+      id: find_binary
+      run: |
+        FIRMWARE_FILE=$(ls dist/spojboard-r*.bin | head -n 1)
+        echo "FIRMWARE_PATH=$FIRMWARE_FILE" >> $GITHUB_OUTPUT
+        echo "FIRMWARE_NAME=$(basename $FIRMWARE_FILE)" >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ steps.find_binary.outputs.FIRMWARE_PATH }}
+        name: Release ${{ steps.get_version.outputs.RELEASE_NUM }}
+        body: |
+          ## SpojBoard Firmware Release ${{ steps.get_version.outputs.RELEASE_NUM }}
+
+          **Firmware:** `${{ steps.find_binary.outputs.FIRMWARE_NAME }}`
+
+          ### Installation
+          1. Download the `.bin` file below
+          2. Upload via web interface at `http://[device-ip]/ota` or use `pio run -t upload`
+
+          ### Changes
+          See commit history for details.
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

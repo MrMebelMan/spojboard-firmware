@@ -9,21 +9,11 @@
 // ============================================================================
 #define FIRMWARE_RELEASE "1"
 
-// Generate 8-character build hash from compile timestamp
-// Uses a simple hash of __DATE__ and __TIME__ for unique build identification
-#define BUILD_TIMESTAMP __DATE__ __TIME__
-
-// Compile-time hash function for build ID (DJB2 algorithm)
-constexpr uint32_t hash_djb2(const char* str) {
-    uint32_t hash = 5381;
-    while (*str) {
-        hash = ((hash << 5) + hash) + static_cast<unsigned char>(*str++);
-    }
-    return hash;
-}
-
-// Build ID is full 32-bit hash (8 hex characters)
-#define BUILD_ID hash_djb2(BUILD_TIMESTAMP)
+// Build ID is injected by build script (8 hex characters)
+// Generated from build timestamp using DJB2 hash algorithm
+#ifndef BUILD_ID
+#define BUILD_ID 0x00000000  // Fallback if not set by build system
+#endif
 
 // ============================================================================
 // Hardware Configuration (HUB75 Display)

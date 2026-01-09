@@ -2,4 +2,4 @@
 .vscode
 .claude
 .DS_Store
-.gitignore
+dist/
