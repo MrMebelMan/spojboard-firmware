@@ -8,28 +8,21 @@
 #include <time.h>
 #include <DNSServer.h>
 
-// Custom 8-bit fonts with full ISO-8859-2 support for Czech characters
-#include "../fonts/DepartureMono4pt8b.h"
-#include "../fonts/DepartureMono5pt8b.h"
-
 // Project modules
 #include "utils/Logger.h"
-#include "utils/decodeutf8.h"
+#include "utils/TimeUtils.h"
 #include "utils/gfxlatin2.h"
 #include "config/AppConfig.h"
 #include "api/DepartureData.h"
+#include "display/DisplayManager.h"
 
 // Hardware configuration and defaults are now in config/AppConfig.h
 
 // ============================================================================
 // Global Objects
 // ============================================================================
-MatrixPanel_I2S_DMA *display = nullptr;
+DisplayManager displayManager;
 WebServer server(80);
-
-// Font references - Using 8-bit fonts for full Czech character support
-const GFXfont *fontSmall = &DepartureMono_Regular4pt8b;  // 8-bit font with ISO-8859-2 encoding
-const GFXfont *fontMedium = &DepartureMono_Regular5pt8b; // 8-bit font with ISO-8859-2 encoding
 
 // ============================================================================
 // Configuration Storage (structure defined in config/AppConfig.h)
@@ -65,362 +58,12 @@ char apPassword[9]; // 8 chars + null
 DNSServer dnsServer;
 const byte DNS_PORT = 53;
 
-// ============================================================================
-// Colors
-// ============================================================================
-uint16_t COLOR_WHITE;
-uint16_t COLOR_YELLOW;
-uint16_t COLOR_RED;
-uint16_t COLOR_GREEN;
-uint16_t COLOR_BLUE;
-uint16_t COLOR_ORANGE;
-uint16_t COLOR_PURPLE;
-uint16_t COLOR_BLACK;
-uint16_t COLOR_CYAN;
-
-// ============================================================================
-// Time Configuration
-// ============================================================================
-struct tm timeinfo;
-const char *ntpServer = "pool.ntp.org";
-const long gmtOffset_sec = 3600;     // CET = UTC+1
-const int daylightOffset_sec = 3600; // CEST = UTC+2
-
 // Debug logging functions are now in utils/Logger.h
 
 // Configuration management functions are now in config/AppConfig.h
-
-// ============================================================================
-// Display Setup
-// ============================================================================
-void setup_display()
-{
-    HUB75_I2S_CFG::i2s_pins _pins = {
-        R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN,
-        A_PIN, B_PIN, C_PIN, D_PIN, E_PIN,
-        LAT_PIN, OE_PIN, CLK_PIN};
-
-    HUB75_I2S_CFG mxconfig(
-        PANEL_WIDTH,
-        PANEL_HEIGHT,
-        PANELS_NUMBER,
-        _pins);
-
-    mxconfig.clkphase = false;
-    mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
-
-    display = new MatrixPanel_I2S_DMA(mxconfig);
-
-    if (!display->begin())
-    {
-        Serial.println("Display FAILED!");
-        while (1)
-            ;
-    }
-
-    display->setBrightness8(config.brightness);
-    display->clearScreen();
-
-    // Define colors
-    COLOR_WHITE = display->color565(255, 255, 255);
-    COLOR_YELLOW = display->color565(255, 255, 0);
-    COLOR_RED = display->color565(255, 0, 0);
-    COLOR_GREEN = display->color565(0, 255, 0);
-    COLOR_BLUE = display->color565(0, 0, 255);
-    COLOR_ORANGE = display->color565(255, 165, 0);
-    COLOR_PURPLE = display->color565(128, 0, 128);
-    COLOR_BLACK = display->color565(0, 0, 0);
-    COLOR_CYAN = display->color565(0, 255, 255);
-}
-
-// ============================================================================
-// Line Color Helper
-// ============================================================================
-uint16_t getLineColor(const char *line)
-{
-    // Metro lines
-    if (strcmp(line, "A") == 0)
-        return COLOR_GREEN;
-    if (strcmp(line, "B") == 0)
-        return COLOR_YELLOW;
-    if (strcmp(line, "C") == 0)
-        return COLOR_RED;
-
-    // Tram lines
-    if (strcmp(line, "8") == 0)
-        return COLOR_RED;
-    if (strcmp(line, "7") == 0)
-        return COLOR_ORANGE;
-    if (strcmp(line, "12") == 0)
-        return COLOR_PURPLE;
-    if (strcmp(line, "31") == 0)
-        return COLOR_GREEN;
-
-    // S-trains
-    if (line[0] == 'S')
-        return COLOR_BLUE;
-
-    // Night lines
-    if (line[0] == '9' && strlen(line) <= 2)
-        return COLOR_CYAN; // Night trams 91-99
-
-    return COLOR_YELLOW; // Default
-}
-
-// ============================================================================
-// Draw Departure Row
-// ============================================================================
-void drawDeparture(int row, Departure dep)
-{
-    int y = row * 8; // Each row is 8 pixels
-
-    // Draw line number background - always black
-    uint16_t lineColor = getLineColor(dep.line);
-    int bgWidth = (strlen(dep.line) > 2) ? 18 : 14;
-    display->fillRect(1, y + 1, bgWidth, 7, COLOR_BLACK);
-
-    // Line number text - colored text on black background
-    display->setTextColor(lineColor);
-    display->setFont(fontMedium);
-
-    // Center the line number text within the background rectangle
-    int16_t x1, y1;
-    uint16_t w, h;
-    display->getTextBounds(dep.line, 0, 0, &x1, &y1, &w, &h);
-    // Account for font's left bearing offset (x1) when centering
-    int textX = 1 + (bgWidth - w) / 2 - x1;
-    // Align baseline with destination (y + 7)
-    display->setCursor(textX, y + 7);
-    display->print(dep.line);
-
-    // AC indicator (asterisk before destination)
-    int destX = bgWidth + 4;
-    if (dep.hasAC)
-    {
-        display->setTextColor(COLOR_CYAN);
-        display->setCursor(destX, y + 7);
-        display->print("*");
-        destX += 6;
-    }
-
-    // Destination
-    display->setTextColor(COLOR_WHITE);
-    display->setFont(fontMedium);
-    display->setCursor(destX, y + 7);
-
-    // Truncate destination if too long
-    char destTrunc[20];
-    int maxChars = dep.hasAC ? 14 : 15;
-    strncpy(destTrunc, dep.destination, maxChars);
-    destTrunc[maxChars] = '\0';
-    display->print(destTrunc);
-
-    // ETA display
-    int etaCursor = 111;
-    if (dep.eta >= 100)
-    {
-        etaCursor = 105;
-    }
-    else if (dep.eta >= 10)
-    {
-        etaCursor = 111;
-    }
-    else
-    {
-        etaCursor = 117;
-    }
-
-    display->setCursor(etaCursor, y + 7);
-
-    // Color based on ETA
-    if (dep.eta < 2)
-    {
-        display->setTextColor(COLOR_RED);
-    }
-    else if (dep.eta < 5)
-    {
-        display->setTextColor(COLOR_YELLOW);
-    }
-    else
-    {
-        display->setTextColor(COLOR_WHITE);
-    }
-
-    // Show delay indicator
-    if (dep.isDelayed && dep.delayMinutes > 0)
-    {
-        display->setTextColor(COLOR_ORANGE);
-    }
-
-    if (dep.eta < 1)
-    {
-        display->print("<1'");
-    }
-    else if (dep.eta >= 60)
-    {
-        display->print(">1h");
-    }
-    else
-    {
-        display->print(dep.eta);
-        display->print("'");
-    }
-}
-
-// ============================================================================
-// Draw Date/Time Row
-// ============================================================================
-void drawDateTime()
-{
-    int y = 24; // Bottom row
-
-    if (!getLocalTime(&timeinfo))
-    {
-        display->setTextColor(COLOR_RED);
-        display->setFont(fontSmall);
-        display->setCursor(2, y + 7);
-        display->print("Time Sync...");
-        return;
-    }
-
-    display->setFont(fontSmall);
-    display->setTextColor(COLOR_WHITE);
-
-    // Day of week
-    char dayStr[5];
-    strftime(dayStr, 5, "%a,", &timeinfo);
-    utf8tocp(dayStr); // Convert Czech day names
-    display->setCursor(2, y + 7);
-    display->print(dayStr);
-
-    // Date
-    char dateStr[7];
-    strftime(dateStr, 7, "%b %d", &timeinfo);
-    utf8tocp(dateStr); // Convert Czech month names
-    display->setCursor(22, y + 7);
-    display->print(dateStr);
-
-    // Time
-    char timeStr[6];
-    strftime(timeStr, 6, "%H:%M", &timeinfo);
-    display->setCursor(102, y + 7);
-    display->print(timeStr);
-}
-
-// ============================================================================
-// Draw Status Screen
-// ============================================================================
-void drawStatus(const char *line1, const char *line2, uint16_t color)
-{
-    display->clearScreen();
-    display->setTextColor(color);
-    display->setFont(fontMedium);
-
-    if (line1)
-    {
-        display->setCursor(2, 12);
-        display->print(line1);
-    }
-    if (line2)
-    {
-        display->setCursor(2, 24);
-        display->print(line2);
-    }
-}
-
-// ============================================================================
-// Update Display
-// ============================================================================
-void updateDisplay()
-{
-    if (isDrawing)
-        return;
-
-    isDrawing = true;
-    display->clearScreen();
-    delay(1);
-
-    // AP Mode - Show credentials
-    if (apModeActive)
-    {
-        display->setFont(fontSmall);
-
-        // Title
-        display->setTextColor(COLOR_CYAN);
-        display->setCursor(2, 7);
-        display->print("WiFi Setup Mode");
-
-        // SSID
-        display->setTextColor(COLOR_WHITE);
-        display->setCursor(2, 15);
-        display->print("SSID:");
-        display->setTextColor(COLOR_YELLOW);
-        display->setCursor(32, 15);
-        display->print(apSSID);
-
-        // Password
-        display->setTextColor(COLOR_WHITE);
-        display->setCursor(2, 23);
-        display->print("Pass:");
-        display->setTextColor(COLOR_GREEN);
-        display->setCursor(32, 23);
-        display->print(apPassword);
-
-        // IP
-        display->setTextColor(COLOR_WHITE);
-        display->setCursor(2, 31);
-        display->print("Go to: 192.168.4.1");
-
-        isDrawing = false;
-        return;
-    }
-
-    if (!wifiConnected)
-    {
-        drawStatus("WiFi Connecting...", config.wifiSsid, COLOR_YELLOW);
-        isDrawing = false;
-        return;
-    }
-
-    if (!config.configured || strlen(config.apiKey) == 0)
-    {
-        char ipStr[32];
-        sprintf(ipStr, "http://%s", WiFi.localIP().toString().c_str());
-        drawStatus("Setup Required", ipStr, COLOR_CYAN);
-        isDrawing = false;
-        return;
-    }
-
-    if (apiError)
-    {
-        drawStatus("API Error", apiErrorMsg, COLOR_RED);
-        drawDateTime();
-        isDrawing = false;
-        return;
-    }
-
-    if (departureCount == 0)
-    {
-        drawStatus("No Departures", stopName[0] ? stopName : "Waiting...", COLOR_YELLOW);
-        drawDateTime();
-        isDrawing = false;
-        return;
-    }
-
-    // Draw departures (top 3 rows)
-    for (int i = 0; i < departureCount && i < 3; i++)
-    {
-        drawDeparture(i, departures[i]);
-        delay(1);
-    }
-
-    drawDateTime();
-    delay(1);
-
-    isDrawing = false;
-}
-
-// String shortening and departure sorting functions are now in api/DepartureData.h
+// Display management is now in display/DisplayManager.h
+// Time utilities are now in utils/TimeUtils.h
+// Color management is now in display/DisplayColors.h
 
 // ============================================================================
 // Golemio API Call - Queries each stop separately and sorts results
@@ -864,7 +507,7 @@ void handleSave()
         if (config.brightness > 255)
             config.brightness = 255;
         // Apply brightness immediately
-        display->setBrightness8(config.brightness);
+        displayManager.setBrightness(config.brightness);
     }
 
     config.configured = true;
@@ -1071,7 +714,7 @@ void connectWiFi()
     Serial.print("WiFi: Connecting to ");
     Serial.println(config.wifiSsid);
 
-    drawStatus("Connecting WiFi...", config.wifiSsid, COLOR_YELLOW);
+    displayManager.drawStatus("Connecting WiFi...", config.wifiSsid, COLOR_YELLOW);
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(config.wifiSsid, config.wifiPassword);
@@ -1087,7 +730,7 @@ void connectWiFi()
         {
             char msg[32];
             snprintf(msg, sizeof(msg), "Attempt %d/%d", attempts + 1, WIFI_CONNECT_ATTEMPTS);
-            drawStatus("Connecting WiFi...", msg, COLOR_YELLOW);
+            displayManager.drawStatus("Connecting WiFi...", msg, COLOR_YELLOW);
         }
 
         attempts++;
@@ -1104,7 +747,7 @@ void connectWiFi()
 
         char ipStr[32];
         sprintf(ipStr, "IP: %s", WiFi.localIP().toString().c_str());
-        drawStatus("WiFi Connected!", ipStr, COLOR_GREEN);
+        displayManager.drawStatus("WiFi Connected!", ipStr, COLOR_GREEN);
         delay(1500);
     }
     else
@@ -1114,7 +757,7 @@ void connectWiFi()
         Serial.println("\nWiFi: Connection failed!");
         Serial.println("Starting AP mode for configuration...");
 
-        drawStatus("WiFi Failed!", "Starting AP mode...", COLOR_RED);
+        displayManager.drawStatus("WiFi Failed!", "Starting AP mode...", COLOR_RED);
         delay(1500);
 
         // Fall back to AP mode
@@ -1141,10 +784,14 @@ void setup()
     loadConfig(config);
 
     // Initialize display with correct brightness from config
-    setup_display();
+    if (!displayManager.begin(config.brightness))
+    {
+        Serial.println("Display initialization failed!");
+        return;
+    }
     logMemory("display_init");
 
-    drawStatus("Starting...", "", COLOR_WHITE);
+    displayManager.drawStatus("Starting...", "", COLOR_WHITE);
 
     // Connect to WiFi (will fall back to AP mode if fails)
     connectWiFi();
@@ -1155,25 +802,19 @@ void setup()
     if (wifiConnected && !apModeActive)
     {
         // Setup NTP time
-        configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-
-        // Wait for time sync
         logTimestamp();
         Serial.println("Syncing time...");
-        int timeAttempts = 0;
-        while (!getLocalTime(&timeinfo) && timeAttempts < 10)
-        {
-            delay(500);
-            timeAttempts++;
-        }
+        initTimeSync();
 
-        if (getLocalTime(&timeinfo))
+        if (syncTime(10, 500))
         {
             char timeStr[32];
-            strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
-            logTimestamp();
-            Serial.print("Time synced: ");
-            Serial.println(timeStr);
+            if (getFormattedTime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S"))
+            {
+                logTimestamp();
+                Serial.print("Time synced: ");
+                Serial.println(timeStr);
+            }
         }
 
         // Initial API call if configured
@@ -1215,7 +856,11 @@ void loop()
         if (needsDisplayUpdate)
         {
             needsDisplayUpdate = false;
-            updateDisplay();
+            displayManager.updateDisplay(departures, departureCount, config.numDepartures,
+                                        wifiConnected, apModeActive,
+                                        apSSID, apPassword,
+                                        apiError, apiErrorMsg,
+                                        stopName, config.configured && strlen(config.apiKey) > 0);
         }
 
         delay(10);
@@ -1265,7 +910,11 @@ void loop()
     if (needsDisplayUpdate)
     {
         needsDisplayUpdate = false;
-        updateDisplay();
+        displayManager.updateDisplay(departures, departureCount, config.numDepartures,
+                                    wifiConnected, apModeActive,
+                                    apSSID, apPassword,
+                                    apiError, apiErrorMsg,
+                                    stopName, config.configured && strlen(config.apiKey) > 0);
     }
 
     // Periodic display update (for time)
