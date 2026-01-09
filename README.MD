@@ -26,8 +26,32 @@ No external server required - standalone operation with web-based configuration!
 
 ## Hardware
 
-- Adafruit MatrixPortal ESP32-S3
-- 2x HUB75 64x32 LED Matrix panels (128x32 total)
+### Recommended Setup
+
+- **Controller**: Adafruit MatrixPortal ESP32-S3
+- **Display**: 2× HUB75 64×32 LED Matrix panels (128×32 total resolution)
+- **Power Supply**: Minimum 5V 3A switching power supply
+
+### Alternative: Generic ESP32-S3
+
+SpojBoard firmware can also run on generic ESP32-S3 development boards with custom wiring. See [Generic ESP32-S3 Guide](docs/GENERIC_ESP32S3.md) for details.
+
+**Caveats:**
+- Requires manual GPIO pin mapping configuration
+- Needs custom wiring (no plug-and-play connector)
+- May require level shifters for some displays
+- Cost savings: ~$10-20 per unit
+
+### Power Supply Requirements
+
+HUB75 LED matrix panels require external 5V power.
+
+**Typical power consumption (displaying text):**
+- Two 64×32 panels (128×32): ~1-2A at typical brightness showing colored text
+- ESP32-S3: ~500mA peak during WiFi transmission
+- **Total**: ~2-3A typical
+
+**Note:** Peak consumption with all LEDs at full white would be ~5A, but this never occurs during normal operation with text display.
 
 ## Quick Start
 
