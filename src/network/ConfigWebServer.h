@@ -4,6 +4,10 @@
 #include <WebServer.h>
 #include "../config/AppConfig.h"
 #include "../api/DepartureData.h"
+#include "OTAUpdateManager.h"
+
+// Forward declaration
+class DisplayManager;
 
 // ============================================================================
 // Configuration Web Server
@@ -46,6 +50,12 @@ public:
     void setCallbacks(ConfigSaveCallback onSave, RefreshCallback onRefresh, RebootCallback onReboot);
 
     /**
+     * Set display manager for OTA progress updates
+     * @param displayMgr Pointer to DisplayManager instance
+     */
+    void setDisplayManager(DisplayManager* displayMgr);
+
+    /**
      * Update current state for status display
      * @param config Current configuration
      * @param wifiConnected WiFi connection status
@@ -71,6 +81,8 @@ public:
 
 private:
     WebServer* server;
+    OTAUpdateManager* otaManager;
+    DisplayManager* displayManager;
 
     // Current state (for status display)
     const Config* currentConfig;
@@ -94,7 +106,13 @@ private:
     void handleSave();
     void handleRefresh();
     void handleReboot();
+    void handleUpdate();        // GET: show OTA upload form
+    void handleUpdateUpload();  // POST: handle firmware upload
     void handleNotFound();
+
+    // OTA progress callback (static for use as function pointer)
+    static void otaProgressCallback(size_t progress, size_t total);
+    static ConfigWebServer* instanceForCallback;  // Static instance pointer for callback
 
     // HTML templates
     static const char* HTML_HEADER;

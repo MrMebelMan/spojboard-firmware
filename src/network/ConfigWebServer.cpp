@@ -1,9 +1,15 @@
 #include "ConfigWebServer.h"
 #include "../utils/Logger.h"
+#include "../display/DisplayManager.h"
 #include <WiFi.h>
 #include <ESP.h>
+#include <Update.h>
+#include <string.h>
 
 // HTML Templates
+// Static instance pointer for OTA callback
+ConfigWebServer* ConfigWebServer::instanceForCallback = nullptr;
+
 const char* ConfigWebServer::HTML_HEADER = R"rawliteral(
 <!DOCTYPE html>
 <html>
@@ -42,17 +48,26 @@ const char* ConfigWebServer::HTML_HEADER = R"rawliteral(
 const char* ConfigWebServer::HTML_FOOTER = "</body></html>";
 
 ConfigWebServer::ConfigWebServer()
-    : server(nullptr), currentConfig(nullptr),
+    : server(nullptr), otaManager(nullptr), displayManager(nullptr),
+      currentConfig(nullptr),
       wifiConnected(false), apModeActive(false),
       apSSID(""), apPassword(""), apClientCount(0),
       apiError(false), apiErrorMsg(""), departureCount(0), stopName(""),
       onSaveCallback(nullptr), onRefreshCallback(nullptr), onRebootCallback(nullptr)
 {
+    otaManager = new OTAUpdateManager();
+    instanceForCallback = this;  // Set static instance for OTA callback
 }
 
 ConfigWebServer::~ConfigWebServer()
 {
     stop();
+
+    if (otaManager != nullptr)
+    {
+        delete otaManager;
+        otaManager = nullptr;
+    }
 }
 
 bool ConfigWebServer::begin()
@@ -69,9 +84,20 @@ bool ConfigWebServer::begin()
     server->on("/save", HTTP_POST, [this]() { handleSave(); });
     server->on("/refresh", HTTP_POST, [this]() { handleRefresh(); });
     server->on("/reboot", HTTP_POST, [this]() { handleReboot(); });
+    server->on("/update", HTTP_GET, [this]() { handleUpdate(); });
+    server->on("/update", HTTP_POST,
+        [this]() { handleUpdateUpload(); },  // Upload handler
+        [this]() { handleUpdateUpload(); }   // Same function handles chunks
+    );
     server->onNotFound([this]() { handleNotFound(); });
 
     server->begin();
+
+    // Initialize OTA manager
+    if (otaManager != nullptr)
+    {
+        otaManager->begin();
+    }
 
     logTimestamp();
     Serial.println("Web server started on port 80");
@@ -105,6 +131,11 @@ void ConfigWebServer::setCallbacks(ConfigSaveCallback onSave, RefreshCallback on
     onSaveCallback = onSave;
     onRefreshCallback = onRefresh;
     onRebootCallback = onReboot;
+}
+
+void ConfigWebServer::setDisplayManager(DisplayManager* displayMgr)
+{
+    displayManager = displayMgr;
 }
 
 void ConfigWebServer::updateState(const Config* config,
@@ -176,6 +207,7 @@ void ConfigWebServer::handleRoot()
             {
                 html += "<div class='status ok'>API OK - " + String(departureCount) + " departures</div>";
             }
+            html += "<p><strong>API Key:</strong> Configured (hidden)</p>";
         }
         else
         {
@@ -189,6 +221,7 @@ void ConfigWebServer::handleRoot()
     }
 
     html += "<p><strong>Free Memory:</strong> " + String(ESP.getFreeHeap()) + " bytes</p>";
+    html += "<p><strong>Firmware:</strong> v" + String(FIRMWARE_VERSION) + " (" + String(BUILD_TIMESTAMP) + ")</p>";
     html += "</div>";
 
     // Configuration form
@@ -211,8 +244,18 @@ void ConfigWebServer::handleRoot()
     }
 
     html += "<label>Golemio API Key</label>";
-    html += "<input type='text' name='apikey' value='" + String(currentConfig->apiKey) + "' required placeholder='Your Golemio API key'>";
-    html += "<p class='info'>Get your API key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
+    // API key is required if: in AP mode OR current API key is empty
+    bool apiKeyRequired = apModeActive || strlen(currentConfig->apiKey) == 0;
+    if (apiKeyRequired)
+    {
+        html += "<input type='password' name='apikey' placeholder='Enter Golemio API key' required>";
+        html += "<p class='info'>Required: Get your API key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
+    }
+    else
+    {
+        html += "<input type='password' name='apikey' placeholder='Enter Golemio API key'>";
+        html += "<p class='info'>Leave empty to keep current API key. Get a new key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
+    }
 
     html += "<label>Stop ID(s)</label>";
     html += "<input type='text' name='stops' value='" + String(currentConfig->stopIds) + "' required placeholder='e.g., U693Z2P'>";
@@ -251,6 +294,9 @@ void ConfigWebServer::handleRoot()
         html += "<form method='POST' action='/refresh' style='display:inline'>";
         html += "<button type='submit'>Refresh Now</button>";
         html += "</form>";
+        html += "<form method='GET' action='/update' style='display:inline; margin-top:10px'>";
+        html += "<button type='submit'>Update Firmware</button>";
+        html += "</form>";
         html += "<form method='POST' action='/reboot' style='display:inline; margin-top:10px'>";
         html += "<button type='submit' class='danger'>Reboot Device</button>";
         html += "</form>";
@@ -287,7 +333,7 @@ void ConfigWebServer::handleSave()
         strlcpy(newConfig.wifiPassword, server->arg("password").c_str(), sizeof(newConfig.wifiPassword));
         wifiChanged = true;
     }
-    if (server->hasArg("apikey"))
+    if (server->hasArg("apikey") && server->arg("apikey").length() > 0)
     {
         strlcpy(newConfig.apiKey, server->arg("apikey").c_str(), sizeof(newConfig.apiKey));
     }
@@ -382,6 +428,141 @@ void ConfigWebServer::handleReboot()
     if (onRebootCallback != nullptr)
     {
         onRebootCallback();
+    }
+}
+
+void ConfigWebServer::handleUpdate()
+{
+    // Block OTA upload in AP mode (security measure)
+    if (apModeActive)
+    {
+        String html = HTML_HEADER;
+        html += "<h1>⚠️ OTA Update Unavailable</h1>";
+        html += "<div class='card' style='background: #ff6b6b; color: #fff;'>";
+        html += "<p>Firmware updates are disabled in AP (setup) mode for security reasons.</p>";
+        html += "<p>Please connect the device to your WiFi network first.</p>";
+        html += "</div>";
+        html += "<p><a href='/'>← Back to Dashboard</a></p>";
+        html += HTML_FOOTER;
+        server->send(403, "text/html", html);
+        return;
+    }
+
+    // Show OTA upload form
+    String html = HTML_HEADER;
+    html += "<h1>🔧 Firmware Update</h1>";
+
+    // Warning card
+    html += "<div class='card' style='background: #ff6b6b; color: #fff;'>";
+    html += "<h3 style='color: #fff; margin-top: 0;'>⚠️ Important</h3>";
+    html += "<ul style='margin: 10px 0; padding-left: 20px;'>";
+    html += "<li>Do NOT power off or disconnect during update!</li>";
+    html += "<li>Update takes 1-2 minutes to complete</li>";
+    html += "<li>Device will reboot automatically after update</li>";
+    html += "<li>Make sure you upload the correct .bin file for ESP32-S3</li>";
+    html += "</ul>";
+    html += "</div>";
+
+    // Current firmware info
+    html += "<div class='card'>";
+    html += "<h2>Current Firmware</h2>";
+    html += "<p><strong>Version:</strong> v" + String(FIRMWARE_VERSION) + "</p>";
+    html += "<p><strong>Build Date:</strong> " + String(BUILD_TIMESTAMP) + "</p>";
+    html += "</div>";
+
+    // Upload form
+    html += "<div class='card'>";
+    html += "<h2>Upload New Firmware</h2>";
+    html += "<form method='POST' action='/update' enctype='multipart/form-data' id='uploadForm'>";
+    html += "<input type='file' name='firmware' accept='.bin' required style='margin-bottom: 15px;'>";
+    html += "<button type='submit' id='uploadBtn'>Upload Firmware</button>";
+    html += "</form>";
+    html += "<div id='progress' style='display:none; margin-top:20px;'>";
+    html += "<div style='background:#333; border-radius:5px; overflow:hidden; height:30px;'>";
+    html += "<div id='progressBar' style='background:#00d4ff; height:100%; width:0%; transition:width 0.3s;'></div>";
+    html += "</div>";
+    html += "<p id='progressText' style='text-align:center; margin-top:10px;'>Uploading...</p>";
+    html += "</div>";
+    html += "</div>";
+
+    // JavaScript for progress
+    html += R"rawliteral(
+<script>
+document.getElementById('uploadForm').onsubmit = function() {
+    document.getElementById('uploadBtn').disabled = true;
+    document.getElementById('progress').style.display = 'block';
+    document.getElementById('progressText').innerText = 'Uploading firmware...';
+};
+</script>
+)rawliteral";
+
+    html += "<p><a href='/'>← Back to Dashboard</a></p>";
+    html += HTML_FOOTER;
+    server->send(200, "text/html", html);
+}
+
+void ConfigWebServer::otaProgressCallback(size_t progress, size_t total)
+{
+    // Static callback that forwards to instance method
+    if (instanceForCallback != nullptr && instanceForCallback->displayManager != nullptr)
+    {
+        instanceForCallback->displayManager->drawOTAProgress(progress, total);
+    }
+}
+
+void ConfigWebServer::handleUpdateUpload()
+{
+    if (otaManager == nullptr)
+    {
+        server->send(500, "text/plain", "OTA manager not initialized");
+        return;
+    }
+
+    // Block uploads in AP mode
+    if (apModeActive)
+    {
+        server->send(403, "text/plain", "OTA updates disabled in AP mode");
+        return;
+    }
+
+    // Let OTA manager handle the upload with progress callback
+    otaManager->handleUpload(server, otaProgressCallback);
+
+    // Check if upload finished
+    HTTPUpload& upload = server->upload();
+    if (upload.status == UPLOAD_FILE_END)
+    {
+        // Send response based on success/failure
+        if (strlen(otaManager->getError()) > 0)
+        {
+            // Error occurred
+            String html = HTML_HEADER;
+            html += "<h1>❌ Update Failed</h1>";
+            html += "<div class='card' style='background: #ff6b6b; color: #fff;'>";
+            html += "<p><strong>Error:</strong> " + String(otaManager->getError()) + "</p>";
+            html += "</div>";
+            html += "<p><a href='/update'>← Try Again</a></p>";
+            html += "<p><a href='/'>← Back to Dashboard</a></p>";
+            html += HTML_FOOTER;
+            server->send(500, "text/html", html);
+        }
+        else
+        {
+            // Success
+            String html = HTML_HEADER;
+            html += "<h1>✅ Update Successful!</h1>";
+            html += "<div class='card' style='background: #2ed573; color: #000;'>";
+            html += "<p>Firmware has been uploaded and validated successfully.</p>";
+            html += "<p>The device will reboot in 3 seconds...</p>";
+            html += "</div>";
+            html += "<script>setTimeout(function(){ window.location='/'; }, 8000);</script>";
+            html += HTML_FOOTER;
+            server->send(200, "text/html", html);
+
+            // Reboot after a short delay
+            delay(3000);
+            ESP.restart();
+        }
     }
 }
 

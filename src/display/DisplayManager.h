@@ -62,6 +62,13 @@ public:
     void drawStatus(const char* line1, const char* line2, uint16_t color);
 
     /**
+     * Draw OTA firmware update progress
+     * @param progress Bytes uploaded so far
+     * @param total Total bytes to upload
+     */
+    void drawOTAProgress(size_t progress, size_t total);
+
+    /**
      * Get pointer to display object (for direct access if needed)
      */
     MatrixPanel_I2S_DMA* getDisplay() { return display; }

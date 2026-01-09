@@ -4,9 +4,9 @@
 #include <WiFi.h>
 #include <Arduino.h>
 
-// Font references from project root fonts/ directory
-#include "../../fonts/DepartureMono4pt8b.h"
-#include "../../fonts/DepartureMono5pt8b.h"
+// Font references from src/fonts/ directory
+#include "../fonts/DepartureMono4pt8b.h"
+#include "../fonts/DepartureMono5pt8b.h"
 
 DisplayManager::DisplayManager()
     : display(nullptr), isDrawing(false)
@@ -65,7 +65,7 @@ void DisplayManager::setBrightness(int brightness)
     }
 }
 
-void DisplayManager::drawDeparture(int row, const Departure& dep)
+void DisplayManager::drawDeparture(int row, const Departure &dep)
 {
     int y = row * 8; // Each row is 8 pixels
 
@@ -105,7 +105,7 @@ void DisplayManager::drawDeparture(int row, const Departure& dep)
 
     // Truncate destination if too long
     char destTrunc[20];
-    int maxChars = dep.hasAC ? 14 : 15;
+    int maxChars = dep.hasAC ? 15 : 16;
     strncpy(destTrunc, dep.destination, maxChars);
     destTrunc[maxChars] = '\0';
     display->print(destTrunc);
@@ -200,7 +200,7 @@ void DisplayManager::drawDateTime()
     display->print(timeStr);
 }
 
-void DisplayManager::drawStatus(const char* line1, const char* line2, uint16_t color)
+void DisplayManager::drawStatus(const char *line1, const char *line2, uint16_t color)
 {
     display->clearScreen();
     display->setTextColor(color);
@@ -218,7 +218,65 @@ void DisplayManager::drawStatus(const char* line1, const char* line2, uint16_t c
     }
 }
 
-void DisplayManager::drawAPMode(const char* ssid, const char* password)
+void DisplayManager::drawOTAProgress(size_t progress, size_t total)
+{
+    if (isDrawing)
+        return;
+
+    isDrawing = true;
+
+    display->clearScreen();
+
+    // Title
+    display->setFont(fontMedium);
+    display->setTextColor(COLOR_CYAN);
+    display->setCursor(2, 8);
+    display->print("Uploading...");
+
+    // Calculate percentage
+    int percentage = 0;
+    if (total > 0)
+    {
+        percentage = (progress * 100) / total;
+        if (percentage > 100)
+            percentage = 100;
+    }
+
+    // Draw progress bar (center of display)
+    int barWidth = 120; // Total bar width
+    int barHeight = 10;
+    int barX = 4;  // 4px left margin
+    int barY = 13; // Center vertically
+
+    // Draw border
+    display->drawRect(barX, barY, barWidth, barHeight, COLOR_WHITE);
+
+    // Fill progress
+    int fillWidth = ((barWidth - 2) * percentage) / 100;
+    if (fillWidth > 0)
+    {
+        display->fillRect(barX + 1, barY + 1, fillWidth, barHeight - 2, COLOR_CYAN);
+    }
+
+    // Display percentage text
+    display->setFont(fontMedium);
+    display->setTextColor(COLOR_WHITE);
+    char percentStr[8];
+    sprintf(percentStr, "%d%%", percentage);
+
+    // Center the percentage text at the bottom
+    int16_t x1, y1;
+    uint16_t w, h;
+    display->getTextBounds(percentStr, 0, 0, &x1, &y1, &w, &h);
+    int textX = (128 - w) / 2 - x1;
+
+    display->setCursor(textX, 31);
+    display->print(percentStr);
+
+    isDrawing = false;
+}
+
+void DisplayManager::drawAPMode(const char *ssid, const char *password)
 {
     display->setFont(fontSmall);
 
@@ -249,11 +307,11 @@ void DisplayManager::drawAPMode(const char* ssid, const char* password)
     display->print("Go to: 192.168.4.1");
 }
 
-void DisplayManager::updateDisplay(const Departure* departures, int departureCount, int numToDisplay,
+void DisplayManager::updateDisplay(const Departure *departures, int departureCount, int numToDisplay,
                                    bool wifiConnected, bool apModeActive,
-                                   const char* apSSID, const char* apPassword,
-                                   bool apiError, const char* apiErrorMsg,
-                                   const char* stopName, bool apiKeyConfigured)
+                                   const char *apSSID, const char *apPassword,
+                                   bool apiError, const char *apiErrorMsg,
+                                   const char *stopName, bool apiKeyConfigured)
 {
     if (isDrawing)
         return;

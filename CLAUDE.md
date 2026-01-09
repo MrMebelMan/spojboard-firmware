@@ -171,7 +171,7 @@ Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, 30s refresh, 3 departure
 
 ### Custom 8-bit ISO-8859-2 GFXfonts
 
-Located in `/fonts` directory:
+Located in `/src/fonts` directory:
 - **8-bit fonts (ISO-8859-2 encoding)**:
   - `DepartureMono4pt8b.h` - Small font (4pt)
   - `DepartureMono5pt8b.h` - Medium font (5pt)
@@ -179,14 +179,14 @@ Located in `/fonts` directory:
   - Full ISO-8859-2 support for Czech, Slovak, Polish, Hungarian, etc.
 
 **UTF-8 Conversion System:**
-Located in `/src` directory:
+Located in `/src/utils` directory:
 - `decodeutf8.cpp/h` - UTF-8 decoder (based on RFC 3629)
 - `gfxlatin2.cpp/h` - Converts UTF-8 to ISO-8859-2 with GFX encoding (characters 0xA0-0xFF shifted to 0x80-0xDF)
 
 **Usage in Code:**
 ```cpp
 #include "../fonts/DepartureMono5pt8b.h"
-#include "gfxlatin2.h"
+#include "../utils/gfxlatin2.h"
 
 const GFXfont* fontMedium = &DepartureMono5pt8b;
 

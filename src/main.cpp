@@ -177,6 +177,7 @@ void setup()
 
     // Initialize web server with callbacks
     webServer.setCallbacks(onConfigSave, onRefresh, onReboot);
+    webServer.setDisplayManager(&displayManager);  // For OTA progress updates
     if (!webServer.begin())
     {
         Serial.println("Web server failed to start!");
