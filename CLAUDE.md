@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ESP32-based transit departure display that fetches real-time data from Prague's Golemio API. Single-file Arduino/PlatformIO project for Adafruit MatrixPortal ESP32-S3 with HUB75 LED matrix panels (128x32 display).
+**SpojBoard** - Smart Panel for Onward Journeys
+
+ESP32-based transit departure display that fetches real-time data from Prague's Golemio API. Modular Arduino/PlatformIO project for Adafruit MatrixPortal ESP32-S3 with HUB75 LED matrix panels (128x32 display).
+
+**SPOJ** = **S**mart **P**anel for **O**nward **J**ourneys (also "spoj" = connection/service in Czech)
 
 **Key Features:**
 - Standalone operation with direct API access

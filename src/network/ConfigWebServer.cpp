@@ -16,7 +16,7 @@ const char* ConfigWebServer::HTML_HEADER = R"rawliteral(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Transport Display Config</title>
+    <title>SpojBoard Configuration</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                max-width: 600px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; }
@@ -165,7 +165,8 @@ void ConfigWebServer::handleRoot()
     }
 
     String html = HTML_HEADER;
-    html += "<h1>🚌 Transport Display</h1>";
+    html += "<h1>🚌 SpojBoard</h1>";
+    html += "<p style='text-align:center; color:#888; margin-top:-10px; margin-bottom:20px;'>Smart Panel for Onward Journeys</p>";
 
     // AP Mode banner
     if (apModeActive)

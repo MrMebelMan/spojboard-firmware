@@ -127,8 +127,8 @@ void setup()
     delay(1000);
 
     Serial.println("\n╔═══════════════════════════════════════╗");
-    Serial.println("║   Transport Display - Standalone      ║");
-    Serial.println("║   Golemio API Edition                 ║");
+    Serial.println("║          SpojBoard v" FIRMWARE_RELEASE "                  ║");
+    Serial.println("║   Smart Panel for Onward Journeys     ║");
     Serial.println("╚═══════════════════════════════════════╝\n");
 
     logMemory("boot");

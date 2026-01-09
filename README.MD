@@ -1,6 +1,10 @@
-# Transport Display - Standalone (Golemio API)
+# SpojBoard - Smart Panel for Onward Journeys
 
-A standalone ESP32-based transit departure display that fetches real-time departure data directly from Prague's Golemio API. No external server required!
+An ESP32-based LED matrix display showing real-time transit departures from Prague's Golemio API.
+
+**SPOJ** = **S**mart **P**anel for **O**nward **J**ourneys (also "spoj" = connection/service in Czech)
+
+No external server required - standalone operation with web-based configuration!
 
 ## Features
 
@@ -34,7 +38,7 @@ A standalone ESP32-based transit departure display that fetches real-time depart
    - The display will show WiFi credentials:
      ```
      WiFi Setup Mode
-     SSID: TransportDisplay-XXXX
+     SSID: SpojBoard-XXXX
      Pass: xxxxxxxx
      Go to: 192.168.4.1
      ```
@@ -115,7 +119,7 @@ The built-in web server provides:
 ```
 ┌────────────────────────────────────┐
 │ WiFi Setup Mode                   │
-│ SSID: TransportDisplay-A1B2       │
+│ SSID: SpojBoard-A1B2       │
 │ Pass: k7m3p9x2                    │
 │ Go to: 192.168.4.1                │
 └────────────────────────────────────┘
@@ -141,7 +145,7 @@ The built-in web server provides:
 ## Troubleshooting
 
 ### Can't Connect to AP
-- Make sure you're connecting to the right network (TransportDisplay-XXXX)
+- Make sure you're connecting to the right network (SpojBoard-XXXX)
 - The password is case-sensitive and shown on the display
 - Try forgetting the network and reconnecting
 
@@ -210,7 +214,7 @@ src/
 ## Technical Details
 
 ### AP Mode Credentials
-- SSID: `TransportDisplay-XXXX` (XXXX = last 4 chars of MAC address)
+- SSID: `SpojBoard-XXXX` (XXXX = last 4 chars of MAC address)
 - Password: 8 random alphanumeric characters (regenerated each time)
 - IP: `192.168.4.1`
 
