@@ -8,6 +8,8 @@ No external server required - standalone operation with web-based configuration!
 
 ![SpojBoard Device](docs/images/spojboard-device.jpg)
 
+**[📸 View More Screenshots](docs/SCREENSHOTS.md)**
+
 ## Features
 
 - **Direct API Access**: Fetches departure data from Golemio PID API every 30 seconds (configurable)
