@@ -6,89 +6,39 @@
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <DNSServer.h>
 
 // Custom 8-bit fonts with full ISO-8859-2 support for Czech characters
 #include "../fonts/DepartureMono4pt8b.h"
 #include "../fonts/DepartureMono5pt8b.h"
 
-// UTF-8 to ISO-8859-2 conversion for Czech characters
-#include "decodeutf8.h"
-#include "gfxlatin2.h"
+// Project modules
+#include "utils/Logger.h"
+#include "utils/decodeutf8.h"
+#include "utils/gfxlatin2.h"
+#include "config/AppConfig.h"
+#include "api/DepartureData.h"
 
-// ============================================================================
-// Configuration - Edit these for initial setup (can be changed via web UI)
-// ============================================================================
-#define DEFAULT_WIFI_SSID "Your WiFi SSID"
-#define DEFAULT_WIFI_PASSWORD "Your WiFi Password"
-
-// ============================================================================
-// HUB75 Display Configuration (Adafruit MatrixPortal ESP32-S3)
-// ============================================================================
-#define PANEL_WIDTH 64
-#define PANEL_HEIGHT 32
-#define PANELS_NUMBER 2 // 128x32 total
-
-// Pin Mapping for Adafruit MatrixPortal ESP32-S3
-#define R1_PIN 42
-#define G1_PIN 40
-#define B1_PIN 41
-#define R2_PIN 38
-#define G2_PIN 37
-#define B2_PIN 39
-
-#define A_PIN 45
-#define B_PIN 36
-#define C_PIN 48
-#define D_PIN 35
-#define E_PIN 21
-
-#define LAT_PIN 47
-#define OE_PIN 14
-#define CLK_PIN 2
+// Hardware configuration and defaults are now in config/AppConfig.h
 
 // ============================================================================
 // Global Objects
 // ============================================================================
 MatrixPanel_I2S_DMA *display = nullptr;
 WebServer server(80);
-Preferences preferences;
 
 // Font references - Using 8-bit fonts for full Czech character support
 const GFXfont *fontSmall = &DepartureMono_Regular4pt8b;  // 8-bit font with ISO-8859-2 encoding
 const GFXfont *fontMedium = &DepartureMono_Regular5pt8b; // 8-bit font with ISO-8859-2 encoding
 
 // ============================================================================
-// Configuration Storage
+// Configuration Storage (structure defined in config/AppConfig.h)
 // ============================================================================
-struct Config
-{
-    char wifiSsid[64];
-    char wifiPassword[64];
-    char apiKey[300];
-    char stopIds[128];    // Comma-separated stop IDs (e.g., "U693Z2P,U693Z1P")
-    int refreshInterval;  // Seconds between API calls
-    int numDepartures;    // Number of departures to fetch
-    int minDepartureTime; // Minimum departure time in minutes (filter out departures < this)
-    int brightness;       // Display brightness (0-255)
-    bool configured;
-};
-
 Config config;
 
 // ============================================================================
-// Departure Data
+// Departure Data (structure defined in api/DepartureData.h)
 // ============================================================================
-struct Departure
-{
-    char line[8];         // Line number (e.g., "31", "A", "S9")
-    char destination[32]; // Destination/headsign
-    int eta;              // Minutes until departure
-    bool hasAC;           // Air conditioning
-    bool isDelayed;       // Has delay
-    int delayMinutes;     // Delay in minutes
-};
-
-#define MAX_DEPARTURES 6
 Departure departures[MAX_DEPARTURES];
 int departureCount = 0;
 
@@ -112,7 +62,6 @@ char apSSID[32];
 char apPassword[9]; // 8 chars + null
 
 // DNS Server for captive portal
-#include <DNSServer.h>
 DNSServer dnsServer;
 const byte DNS_PORT = 53;
 
@@ -137,78 +86,9 @@ const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 3600;     // CET = UTC+1
 const int daylightOffset_sec = 3600; // CEST = UTC+2
 
-// ============================================================================
-// Debug Logging
-// ============================================================================
-void logTimestamp()
-{
-    char timestamp[24];
-    sprintf(timestamp, "[%010lu] ", millis());
-    Serial.print(timestamp);
-}
+// Debug logging functions are now in utils/Logger.h
 
-void logMemory(const char *location)
-{
-    logTimestamp();
-    Serial.print("MEM@");
-    Serial.print(location);
-    Serial.print(": Free=");
-    Serial.print(ESP.getFreeHeap());
-    Serial.print(" Min=");
-    Serial.println(ESP.getMinFreeHeap());
-}
-
-// ============================================================================
-// Configuration Management
-// ============================================================================
-void loadConfig()
-{
-    preferences.begin("transport", true); // Read-only
-
-    strlcpy(config.wifiSsid, preferences.getString("wifiSsid", DEFAULT_WIFI_SSID).c_str(), sizeof(config.wifiSsid));
-    strlcpy(config.wifiPassword, preferences.getString("wifiPass", DEFAULT_WIFI_PASSWORD).c_str(), sizeof(config.wifiPassword));
-    strlcpy(config.apiKey, preferences.getString("apiKey", "").c_str(), sizeof(config.apiKey));
-    strlcpy(config.stopIds, preferences.getString("stopIds", "U693Z2P").c_str(), sizeof(config.stopIds));
-    config.refreshInterval = preferences.getInt("refresh", 30);
-    config.numDepartures = preferences.getInt("numDeps", 3);
-    config.minDepartureTime = preferences.getInt("minDepTime", 3);
-    config.brightness = preferences.getInt("brightness", 90);
-    config.configured = preferences.getBool("configured", false);
-
-    preferences.end();
-
-    logTimestamp();
-    Serial.println("Config loaded:");
-    Serial.print("  SSID: ");
-    Serial.println(config.wifiSsid);
-    Serial.print("  Stop IDs: ");
-    Serial.println(config.stopIds);
-    Serial.print("  Refresh: ");
-    Serial.print(config.refreshInterval);
-    Serial.println("s");
-    Serial.print("  Configured: ");
-    Serial.println(config.configured ? "Yes" : "No");
-}
-
-void saveConfig()
-{
-    preferences.begin("transport", false); // Read-write
-
-    preferences.putString("wifiSsid", config.wifiSsid);
-    preferences.putString("wifiPass", config.wifiPassword);
-    preferences.putString("apiKey", config.apiKey);
-    preferences.putString("stopIds", config.stopIds);
-    preferences.putInt("refresh", config.refreshInterval);
-    preferences.putInt("numDeps", config.numDepartures);
-    preferences.putInt("minDepTime", config.minDepartureTime);
-    preferences.putInt("brightness", config.brightness);
-    preferences.putBool("configured", true);
-
-    preferences.end();
-
-    logTimestamp();
-    Serial.println("Config saved");
-}
+// Configuration management functions are now in config/AppConfig.h
 
 // ============================================================================
 // Display Setup
@@ -540,53 +420,7 @@ void updateDisplay()
     isDrawing = false;
 }
 
-// ============================================================================
-// String Shortening for Display
-// ============================================================================
-struct StringReplacement
-{
-    const char *search;
-    const char *replace;
-};
-
-// Common Czech words to shorten for display space
-// Note: Strings are in UTF-8 format (before conversion to ISO-8859-2)
-const StringReplacement replacements[] = {
-    {"Nádraží", "Nádr."},
-    // Add more replacements here as needed
-    {"Sídliště", "Sídl."},
-    {"Nemocnice", "Nem."},
-};
-const int replacementCount = sizeof(replacements) / sizeof(replacements[0]);
-
-void shortenDestination(char *destination)
-{
-    for (int i = 0; i < replacementCount; i++)
-    {
-        char *pos = strstr(destination, replacements[i].search);
-        if (pos != NULL)
-        {
-            int searchLen = strlen(replacements[i].search);
-            int replaceLen = strlen(replacements[i].replace);
-            int tailLen = strlen(pos + searchLen);
-
-            // Copy replacement
-            memcpy(pos, replacements[i].replace, replaceLen);
-            // Shift remaining text
-            memmove(pos + replaceLen, pos + searchLen, tailLen + 1); // +1 for null terminator
-        }
-    }
-}
-
-// ============================================================================
-// Departure Sorting Helper
-// ============================================================================
-int compareDepartures(const void *a, const void *b)
-{
-    Departure *depA = (Departure *)a;
-    Departure *depB = (Departure *)b;
-    return depA->eta - depB->eta; // Sort by ETA ascending
-}
+// String shortening and departure sorting functions are now in api/DepartureData.h
 
 // ============================================================================
 // Golemio API Call - Queries each stop separately and sorts results
@@ -1034,7 +868,7 @@ void handleSave()
     }
 
     config.configured = true;
-    saveConfig();
+    saveConfig(config);
 
     // If in AP mode or WiFi changed, attempt to connect to the new network
     if (apModeActive || wifiChanged)
@@ -1304,7 +1138,7 @@ void setup()
     logMemory("boot");
 
     // Load configuration FIRST (needed for display brightness)
-    loadConfig();
+    loadConfig(config);
 
     // Initialize display with correct brightness from config
     setup_display();
