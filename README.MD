@@ -84,7 +84,7 @@ The built-in web server provides:
   - Number of departures to display (1-6)
   - Minimum departure time (0-30 minutes) - filter out departures too soon to catch
   - Display brightness (0-255)
-  - Custom line colors with pattern matching (e.g., "9*" for all night trams)
+  - Custom line colors with pattern matching (e.g., "9*/9**" for all night lines)
 - **Actions**:
   - Force refresh
   - Update firmware (manual .bin upload)
@@ -146,10 +146,10 @@ These colors are used by default and can be customized via the web interface:
 - **Green**: Metro A
 - **Yellow**: Metro B, Default fallback for all unmapped lines
 - **Red**: Metro C
-- **White**: 2-digit trams 10-29 (e.g., 10, 12, 15, 17, 22)
+- **White**: Trams 1-29 (e.g., 2, 5, 7, 10, 12, 15, 17, 22)
 - **Purple**: 3-digit trams 100-299 (e.g., 100, 102, 200)
 - **Blue**: S-trains (S1, S2, S3, etc.)
-- **Cyan**: Night trams 91-99
+- **Cyan**: Night lines 91-99, 900-999
 
 **Customizing Line Colors:**
 - Configure specific colors for individual lines (e.g., "A=RED")

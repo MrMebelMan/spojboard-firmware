@@ -50,6 +50,14 @@ char stopName[64] = "";
 // - ConfigWebServer: Web interface handlers
 
 // ============================================================================
+// API Status Callback - Updates display during retries
+// ============================================================================
+void onAPIStatus(const char* message)
+{
+    displayManager.drawStatus(message, "", COLOR_YELLOW);
+}
+
+// ============================================================================
 // API Fetch Wrapper - Uses GolemioAPI module
 // ============================================================================
 void fetchDepartures()
@@ -144,6 +152,9 @@ void setup()
     displayManager.setConfig(&config);
     logMemory("display_init");
 
+    // Set up API status callback for display updates
+    golemioAPI.setStatusCallback(onAPIStatus);
+
     displayManager.drawStatus("Starting SpojBoard...", "FW v" FIRMWARE_RELEASE, COLOR_WHITE);
 
     // Try to connect to WiFi (will fall back to AP mode if fails)
@@ -211,6 +222,7 @@ void setup()
         if (config.configured && strlen(config.apiKey) > 0)
         {
             fetchDepartures();
+            lastApiCall = millis(); // Prevent immediate second call in loop()
         }
     }
 
@@ -265,8 +277,8 @@ void loop()
     }
 
     // Check WiFi connection (STA mode only)
-    static bool wasConnected = false;
     bool isConnected = wifiManager.isConnected();
+    static bool wasConnected = isConnected; // Initialize to current state on first call
 
     if (!isConnected && wasConnected)
     {

@@ -10,6 +10,12 @@
 // ============================================================================
 
 /**
+ * Callback for API status updates (e.g., retry attempts)
+ * @param message Status message to display
+ */
+typedef void (*APIStatusCallback)(const char* message);
+
+/**
  * Client for Prague's Golemio API (api.golemio.cz)
  * Fetches real-time departure information for public transit stops.
  */
@@ -28,6 +34,12 @@ public:
     GolemioAPI();
 
     /**
+     * Set callback for API status updates
+     * @param callback Function to call with status messages
+     */
+    void setStatusCallback(APIStatusCallback callback);
+
+    /**
      * Fetch departures from Golemio API
      * @param config Configuration with API key, stop IDs, and filters
      * @return APIResult with departures, count, and error status
@@ -35,6 +47,7 @@ public:
     APIResult fetchDepartures(const Config &config);
 
 private:
+    APIStatusCallback statusCallback;
     static constexpr int MAX_TEMP_DEPARTURES = 36;
     static constexpr int JSON_BUFFER_SIZE = 8192;
     static constexpr int HTTP_TIMEOUT_MS = 10000;

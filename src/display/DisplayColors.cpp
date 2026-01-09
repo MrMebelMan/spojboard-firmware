@@ -47,18 +47,18 @@ uint16_t getLineColor(const char *line)
         return COLOR_RED;
 
     // Tram lines
-    if ((line[0] == '1' && strlen(line) == 2) || (line[0] == '2' && strlen(line) == 2))
-        return COLOR_WHITE;
+    if ((line[0] >= '1' && line[0] <= '9' && strlen(line) == 1) || (line[0] == '1' && strlen(line) == 2) || (line[0] == '2' && strlen(line) == 2))
+        return COLOR_WHITE; // Trams 1-29
     if ((line[0] == '1' && strlen(line) == 3) || (line[0] == '2' && strlen(line) == 3))
-        return COLOR_PURPLE;
+        return COLOR_PURPLE; // 3-digit trams 100-299
 
     // S-trains
     if (line[0] == 'S')
         return COLOR_BLUE;
 
     // Night lines
-    if (line[0] == '9' && strlen(line) <= 2)
-        return COLOR_CYAN; // Night trams 91-99
+    if (line[0] == '9' && strlen(line) <= 3 && strlen(line) >= 2)
+        return COLOR_CYAN; // Night lines 91-99, 900-999
 
     return COLOR_YELLOW; // Default
 }

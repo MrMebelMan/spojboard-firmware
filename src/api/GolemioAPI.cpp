@@ -5,8 +5,13 @@
 #include <ArduinoJson.h>
 #include <time.h>
 
-GolemioAPI::GolemioAPI()
+GolemioAPI::GolemioAPI() : statusCallback(nullptr)
 {
+}
+
+void GolemioAPI::setStatusCallback(APIStatusCallback callback)
+{
+    statusCallback = callback;
 }
 
 GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
@@ -119,7 +124,73 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
     http.addHeader("Content-Type", "application/json");
     http.setTimeout(HTTP_TIMEOUT_MS);
 
-    int httpCode = http.GET();
+    const int MAX_RETRIES = 3;
+    int httpCode = -1;
+
+    for (int retry = 0; retry < MAX_RETRIES; retry++)
+    {
+        if (retry > 0)
+        {
+            int delayMs = 2000 * retry; // 2s, 4s, 6s backoff
+
+            // Update display with retry status
+            char statusMsg[64];
+            snprintf(statusMsg, sizeof(statusMsg), "API Retry %d/%d", retry, MAX_RETRIES);
+            if (statusCallback)
+            {
+                statusCallback(statusMsg);
+            }
+
+            logTimestamp();
+            Serial.print("API: Retry ");
+            Serial.print(retry);
+            Serial.print(" after ");
+            Serial.print(delayMs);
+            Serial.println("ms");
+            delay(delayMs);
+        }
+
+        httpCode = http.GET();
+
+        // Success - break out of retry loop
+        if (httpCode == HTTP_CODE_OK)
+            break;
+
+        // Don't retry on 4xx errors (client errors - won't fix with retry)
+        if (httpCode >= 400 && httpCode < 500)
+        {
+            logTimestamp();
+            Serial.print("API: Client error ");
+            Serial.print(httpCode);
+            Serial.println(" - no retry");
+            break;
+        }
+
+        // Log retry-able errors
+        if (retry < MAX_RETRIES - 1)
+        {
+            logTimestamp();
+            Serial.print("API Error: HTTP ");
+            Serial.print(httpCode);
+            Serial.println(" - will retry");
+
+            // Show error on display before first retry
+            if (retry == 0 && statusCallback)
+            {
+                char errorMsg[64];
+                if (httpCode == -1)
+                {
+                    snprintf(errorMsg, sizeof(errorMsg), "API Error: No Connection");
+                }
+                else
+                {
+                    snprintf(errorMsg, sizeof(errorMsg), "API Error: HTTP %d", httpCode);
+                }
+                statusCallback(errorMsg);
+                delay(1000); // Show error message briefly
+            }
+        }
+    }
 
     if (httpCode == HTTP_CODE_OK)
     {
@@ -170,9 +241,11 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
     else
     {
         logTimestamp();
-        Serial.print("API Error for stop ");
+        Serial.print("API: Failed after ");
+        Serial.print(MAX_RETRIES);
+        Serial.print(" attempts for stop ");
         Serial.print(stopId);
-        Serial.print(": HTTP ");
+        Serial.print(" - HTTP ");
         Serial.println(httpCode);
         http.end();
         return false;
