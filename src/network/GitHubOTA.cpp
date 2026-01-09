@@ -260,14 +260,15 @@ bool GitHubOTA::downloadAndInstall(const char* assetUrl, size_t expectedSize, Pr
     Serial.print("Downloading firmware from: ");
     Serial.println(assetUrl);
 
-    // Make HTTP request
+    // Make HTTP request with redirect following enabled
     HTTPClient http;
     http.begin(assetUrl);
     http.setTimeout(HTTP_TIMEOUT_MS);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);  // Follow redirects automatically
 
     int httpCode = http.GET();
 
-    if (httpCode != HTTP_CODE_OK && httpCode != HTTP_CODE_MOVED_PERMANENTLY)
+    if (httpCode != HTTP_CODE_OK)
     {
         logTimestamp();
         Serial.print("Download Error: HTTP ");
