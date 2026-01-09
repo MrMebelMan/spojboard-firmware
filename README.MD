@@ -7,7 +7,6 @@ An ESP32-based LED matrix display showing real-time transit departures from Prag
 No external server required - standalone operation with web-based configuration!
 
 ![SpojBoard Device](docs/images/spojboard-device.jpg)
-*SpojBoard showing real-time departures on a 128×32 LED matrix display*
 
 ## Features
 
