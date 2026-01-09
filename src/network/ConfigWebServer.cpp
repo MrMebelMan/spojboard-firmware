@@ -2,7 +2,6 @@
 #include "../utils/Logger.h"
 #include "../display/DisplayManager.h"
 #include <WiFi.h>
-#include <ESP.h>
 #include <Update.h>
 #include <string.h>
 

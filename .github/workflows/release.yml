@@ -5,6 +5,9 @@ on:
     tags:
       - 'r*'  # Trigger on tags like r1, r2, r10, etc.
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
