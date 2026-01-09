@@ -5,6 +5,7 @@
 #include "../config/AppConfig.h"
 #include "../api/DepartureData.h"
 #include "OTAUpdateManager.h"
+#include "GitHubOTA.h"
 
 // Forward declaration
 class DisplayManager;
@@ -82,6 +83,7 @@ public:
 private:
     WebServer* server;
     OTAUpdateManager* otaManager;
+    GitHubOTA* githubOTA;
     DisplayManager* displayManager;
 
     // Current state (for status display)
@@ -108,11 +110,14 @@ private:
     void handleReboot();
     void handleUpdate();        // GET: show OTA upload form
     void handleUpdateUpload();  // POST: handle firmware upload
+    void handleCheckUpdate();   // GET: check GitHub for updates (AJAX)
+    void handleDownloadUpdate(); // POST: download and install from GitHub (AJAX)
     void handleNotFound();
 
-    // OTA progress callback (static for use as function pointer)
+    // OTA progress callbacks (static for use as function pointers)
     static void otaProgressCallback(size_t progress, size_t total);
-    static ConfigWebServer* instanceForCallback;  // Static instance pointer for callback
+    static void githubOtaProgressCallback(size_t progress, size_t total);
+    static ConfigWebServer* instanceForCallback;  // Static instance pointer for callbacks
 
     // HTML templates
     static const char* HTML_HEADER;

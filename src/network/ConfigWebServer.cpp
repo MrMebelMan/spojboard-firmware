@@ -47,7 +47,7 @@ const char* ConfigWebServer::HTML_HEADER = R"rawliteral(
 const char* ConfigWebServer::HTML_FOOTER = "</body></html>";
 
 ConfigWebServer::ConfigWebServer()
-    : server(nullptr), otaManager(nullptr), displayManager(nullptr),
+    : server(nullptr), otaManager(nullptr), githubOTA(nullptr), displayManager(nullptr),
       currentConfig(nullptr),
       wifiConnected(false), apModeActive(false),
       apSSID(""), apPassword(""), apClientCount(0),
@@ -55,6 +55,7 @@ ConfigWebServer::ConfigWebServer()
       onSaveCallback(nullptr), onRefreshCallback(nullptr), onRebootCallback(nullptr)
 {
     otaManager = new OTAUpdateManager();
+    githubOTA = new GitHubOTA();
     instanceForCallback = this;  // Set static instance for OTA callback
 }
 
@@ -66,6 +67,12 @@ ConfigWebServer::~ConfigWebServer()
     {
         delete otaManager;
         otaManager = nullptr;
+    }
+
+    if (githubOTA != nullptr)
+    {
+        delete githubOTA;
+        githubOTA = nullptr;
     }
 }
 
@@ -88,6 +95,8 @@ bool ConfigWebServer::begin()
         [this]() { handleUpdateUpload(); },  // Upload handler
         [this]() { handleUpdateUpload(); }   // Same function handles chunks
     );
+    server->on("/check-update", HTTP_GET, [this]() { handleCheckUpdate(); });
+    server->on("/download-update", HTTP_POST, [this]() { handleDownloadUpdate(); });
     server->onNotFound([this]() { handleNotFound(); });
 
     server->begin();
@@ -301,10 +310,133 @@ void ConfigWebServer::handleRoot()
         html += "<form method='GET' action='/update' style='display:inline; margin-top:10px'>";
         html += "<button type='submit'>Update Firmware</button>";
         html += "</form>";
+        html += "<form id='checkUpdateForm' onsubmit='checkForUpdate(event); return false;' style='display:inline; margin-top:10px'>";
+        html += "<button type='submit' id='checkUpdateBtn'>Check for Updates</button>";
+        html += "</form>";
         html += "<form method='POST' action='/reboot' style='display:inline; margin-top:10px'>";
         html += "<button type='submit' class='danger'>Reboot Device</button>";
         html += "</form>";
+        html += "<div id='updateStatus' style='display:none; margin-top:15px;'></div>";
         html += "</div>";
+    }
+
+    // JavaScript for GitHub updates
+    if (!apModeActive)
+    {
+        html += R"rawliteral(
+<script>
+async function checkForUpdate(event) {
+    event.preventDefault();
+    const btn = document.getElementById('checkUpdateBtn');
+    const status = document.getElementById('updateStatus');
+
+    btn.disabled = true;
+    btn.innerText = 'Checking...';
+    status.style.display = 'none';
+
+    try {
+        const response = await fetch('/check-update');
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        if (data.available) {
+            status.innerHTML = `
+                <div class='card' style='background: #2ed573; color: #000;'>
+                    <h3 style='margin-top:0;'>✨ Update Available!</h3>
+                    <p><strong>Version:</strong> ${data.releaseName}</p>
+                    <p><strong>File:</strong> ${data.fileName} (${formatBytes(data.fileSize)})</p>
+                    <details style='margin: 10px 0;'>
+                        <summary style='cursor:pointer; font-weight:bold;'>Release Notes</summary>
+                        <div style='margin-top:10px; white-space:pre-wrap; font-size:0.9em;'>${escapeHtml(data.releaseNotes)}</div>
+                    </details>
+                    <button onclick="downloadUpdate('${data.assetUrl}', ${data.fileSize})"
+                            style='background:#ff6b6b; color:#fff;'>
+                        Download & Install
+                    </button>
+                </div>
+            `;
+        } else {
+            status.innerHTML = `
+                <div class='status ok'>✓ You're up to date!</div>
+            `;
+        }
+        status.style.display = 'block';
+    } catch (error) {
+        status.innerHTML = `
+            <div class='status error'>Error: ${error.message}</div>
+        `;
+        status.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.innerText = 'Check for Updates';
+    }
+}
+
+async function downloadUpdate(url, size) {
+    if (!confirm('Download and install firmware? Device will reboot after installation.')) {
+        return;
+    }
+
+    const status = document.getElementById('updateStatus');
+    status.innerHTML = `
+        <div class='card'>
+            <h3>⬇️ Downloading Firmware...</h3>
+            <p style='color:#888; font-size:0.9em;'>Do not power off or disconnect!</p>
+            <div style='background:#333; border-radius:5px; overflow:hidden; height:30px; margin:15px 0;'>
+                <div id='downloadProgress' style='background:#00d4ff; height:100%; width:0%; transition:width 0.3s;'></div>
+            </div>
+            <p id='downloadText' style='text-align:center;'>Starting download...</p>
+        </div>
+    `;
+
+    try {
+        const response = await fetch('/download-update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ assetUrl: url, expectedSize: size })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            status.innerHTML = `
+                <div class='status ok'>
+                    ✅ Update installed successfully! Device rebooting...
+                </div>
+            `;
+            setTimeout(() => window.location.reload(), 8000);
+        } else {
+            status.innerHTML = `
+                <div class='status error'>
+                    ❌ Installation failed: ${data.error}
+                </div>
+            `;
+        }
+    } catch (error) {
+        status.innerHTML = `
+            <div class='status error'>
+                ❌ Download failed: ${error.message}
+            </div>
+        `;
+    }
+}
+
+function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+)rawliteral";
     }
 
     html += HTML_FOOTER;
@@ -584,5 +716,110 @@ void ConfigWebServer::handleNotFound()
     {
         server->sendHeader("Location", "/");
         server->send(302, "text/plain", "");
+    }
+}
+
+void ConfigWebServer::githubOtaProgressCallback(size_t progress, size_t total)
+{
+    // Static callback that forwards to instance method
+    if (instanceForCallback != nullptr &&
+        instanceForCallback->displayManager != nullptr)
+    {
+        instanceForCallback->displayManager->drawOTAProgress(progress, total);
+    }
+}
+
+void ConfigWebServer::handleCheckUpdate()
+{
+    // Block if in AP mode
+    if (apModeActive)
+    {
+        server->send(403, "application/json", "{\"error\":\"Updates not available in AP mode\"}");
+        return;
+    }
+
+    logTimestamp();
+    Serial.println("Checking for GitHub updates...");
+
+    // Check for updates
+    GitHubOTA::ReleaseInfo info = githubOTA->checkForUpdate(FIRMWARE_RELEASE);
+
+    // Build JSON response
+    String json = "{";
+
+    if (info.hasError)
+    {
+        json += "\"available\":false,";
+        json += "\"error\":\"" + String(info.errorMsg) + "\"";
+    }
+    else if (info.available)
+    {
+        json += "\"available\":true,";
+        json += "\"releaseNumber\":" + String(info.releaseNumber) + ",";
+        json += "\"releaseName\":\"" + String(info.releaseName) + "\",";
+        json += "\"releaseNotes\":\"" + String(info.releaseNotes) + "\",";
+        json += "\"fileName\":\"" + String(info.assetName) + "\",";
+        json += "\"fileSize\":" + String(info.assetSize) + ",";
+        json += "\"assetUrl\":\"" + String(info.assetUrl) + "\"";
+    }
+    else
+    {
+        json += "\"available\":false";
+    }
+
+    json += "}";
+
+    server->send(200, "application/json", json);
+}
+
+void ConfigWebServer::handleDownloadUpdate()
+{
+    // Block if in AP mode
+    if (apModeActive)
+    {
+        server->send(403, "application/json", "{\"success\":false,\"error\":\"Updates not available in AP mode\"}");
+        return;
+    }
+
+    // Parse JSON request body
+    String body = server->arg("plain");
+
+    // Simple JSON parsing (extract assetUrl and expectedSize)
+    int urlStart = body.indexOf("\"assetUrl\":\"") + 12;
+    int urlEnd = body.indexOf("\"", urlStart);
+    String assetUrl = body.substring(urlStart, urlEnd);
+
+    int sizeStart = body.indexOf("\"expectedSize\":") + 15;
+    int sizeEnd = body.indexOf(",", sizeStart);
+    if (sizeEnd < 0) sizeEnd = body.indexOf("}", sizeStart);
+    String sizeStr = body.substring(sizeStart, sizeEnd);
+    size_t expectedSize = sizeStr.toInt();
+
+    if (assetUrl.length() == 0 || expectedSize == 0)
+    {
+        server->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid request parameters\"}");
+        return;
+    }
+
+    logTimestamp();
+    Serial.print("Downloading update from: ");
+    Serial.println(assetUrl);
+
+    // Download and install
+    bool success = githubOTA->downloadAndInstall(assetUrl.c_str(), expectedSize, githubOtaProgressCallback);
+
+    if (success)
+    {
+        server->send(200, "application/json", "{\"success\":true,\"message\":\"Rebooting...\"}");
+
+        logTimestamp();
+        Serial.println("Update successful, rebooting in 3 seconds...");
+
+        delay(3000);
+        ESP.restart();
+    }
+    else
+    {
+        server->send(500, "application/json", "{\"success\":false,\"error\":\"Download or installation failed\"}");
     }
 }
