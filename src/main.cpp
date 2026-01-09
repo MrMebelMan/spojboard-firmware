@@ -84,7 +84,7 @@ void fetchDepartures()
 // Callback Functions for ConfigWebServer
 // ============================================================================
 
-void onConfigSave(const Config& newConfig, bool wifiChanged)
+void onConfigSave(const Config &newConfig, bool wifiChanged)
 {
     // Update config
     config = newConfig;
@@ -117,7 +117,6 @@ void onReboot()
     ESP.restart();
 }
 
-
 // ============================================================================
 // Setup
 // ============================================================================
@@ -127,7 +126,7 @@ void setup()
     delay(1000);
 
     Serial.println("\n╔═══════════════════════════════════════╗");
-    Serial.println("║          SpojBoard v" FIRMWARE_RELEASE "                  ║");
+    Serial.println("║          SpojBoard v" FIRMWARE_RELEASE "                 ║");
     Serial.println("║   Smart Panel for Onward Journeys     ║");
     Serial.println("╚═══════════════════════════════════════╝\n");
 
@@ -145,7 +144,7 @@ void setup()
     displayManager.setConfig(&config);
     logMemory("display_init");
 
-    displayManager.drawStatus("Starting...", "", COLOR_WHITE);
+    displayManager.drawStatus("Starting SpojBoard...", "FW v" FIRMWARE_RELEASE, COLOR_WHITE);
 
     // Try to connect to WiFi (will fall back to AP mode if fails)
     if (!wifiManager.connectSTA(config, 20, 500))
@@ -178,7 +177,7 @@ void setup()
 
     // Initialize web server with callbacks
     webServer.setCallbacks(onConfigSave, onRefresh, onReboot);
-    webServer.setDisplayManager(&displayManager);  // For OTA progress updates
+    webServer.setDisplayManager(&displayManager); // For OTA progress updates
     if (!webServer.begin())
     {
         Serial.println("Web server failed to start!");
@@ -236,10 +235,10 @@ void loop()
 
     // Update web server state for status display
     webServer.updateState(&config,
-                         wifiManager.isConnected(), wifiManager.isAPMode(),
-                         wifiManager.getAPSSID(), wifiManager.getAPPassword(), wifiManager.getAPClientCount(),
-                         apiError, apiErrorMsg,
-                         departureCount, stopName);
+                          wifiManager.isConnected(), wifiManager.isAPMode(),
+                          wifiManager.getAPSSID(), wifiManager.getAPPassword(), wifiManager.getAPClientCount(),
+                          apiError, apiErrorMsg,
+                          departureCount, stopName);
 
     // Skip WiFi monitoring and API calls in AP mode
     if (wifiManager.isAPMode())
@@ -255,10 +254,10 @@ void loop()
         {
             needsDisplayUpdate = false;
             displayManager.updateDisplay(departures, departureCount, config.numDepartures,
-                                        wifiManager.isConnected(), wifiManager.isAPMode(),
-                                        wifiManager.getAPSSID(), wifiManager.getAPPassword(),
-                                        apiError, apiErrorMsg,
-                                        stopName, config.configured && strlen(config.apiKey) > 0);
+                                         wifiManager.isConnected(), wifiManager.isAPMode(),
+                                         wifiManager.getAPSSID(), wifiManager.getAPPassword(),
+                                         apiError, apiErrorMsg,
+                                         stopName, config.configured && strlen(config.apiKey) > 0);
         }
 
         delay(10);
@@ -309,10 +308,10 @@ void loop()
     {
         needsDisplayUpdate = false;
         displayManager.updateDisplay(departures, departureCount, config.numDepartures,
-                                    wifiManager.isConnected(), wifiManager.isAPMode(),
-                                    wifiManager.getAPSSID(), wifiManager.getAPPassword(),
-                                    apiError, apiErrorMsg,
-                                    stopName, config.configured && strlen(config.apiKey) > 0);
+                                     wifiManager.isConnected(), wifiManager.isAPMode(),
+                                     wifiManager.getAPSSID(), wifiManager.getAPPassword(),
+                                     apiError, apiErrorMsg,
+                                     stopName, config.configured && strlen(config.apiKey) > 0);
     }
 
     // Periodic display update (for time)

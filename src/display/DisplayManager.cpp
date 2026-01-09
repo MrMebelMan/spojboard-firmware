@@ -69,9 +69,9 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
 {
     int y = row * 8; // Each row is 8 pixels
 
-    // Draw line number background - always black
+    // Draw line number background - always black (fixed width for all routes)
     uint16_t lineColor = getLineColorWithConfig(dep.line, config ? config->lineColorMap : "");
-    int bgWidth = (strlen(dep.line) > 2) ? 18 : 14;
+    int bgWidth = 18; // Fixed width to fit up to 3 characters
     display->fillRect(1, y + 1, bgWidth, 7, COLOR_BLACK);
 
     // Line number text - colored text on black background
@@ -89,7 +89,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     display->print(dep.line);
 
     // AC indicator (asterisk before destination)
-    int destX = bgWidth + 4;
+    int destX = 22; // Fixed position for all destinations (18px max route width + 4px gap)
     if (dep.hasAC)
     {
         display->setTextColor(COLOR_CYAN);
@@ -106,6 +106,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     // Truncate destination if too long
     char destTrunc[20];
     int maxChars = dep.hasAC ? 15 : 16;
+    maxChars -= (dep.eta >= 100 ? 2 : (dep.eta >= 10 ? 1 : 0));
     strncpy(destTrunc, dep.destination, maxChars);
     destTrunc[maxChars] = '\0';
     display->print(destTrunc);

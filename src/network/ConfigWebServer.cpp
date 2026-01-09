@@ -678,17 +678,20 @@ void ConfigWebServer::handleSave()
             newConfig.brightness = 255;
     }
 
-    // Line color map
-    if (server->hasArg("linecolormap"))
+    // Line color map (always update when not in AP mode to handle empty case)
+    if (!apModeActive)
     {
-        strlcpy(newConfig.lineColorMap,
-                server->arg("linecolormap").c_str(),
-                sizeof(newConfig.lineColorMap));
+        // Get the value, defaulting to empty string if not present
+        String colorMapValue = server->hasArg("linecolormap")
+                               ? server->arg("linecolormap")
+                               : "";
+
+        strlcpy(newConfig.lineColorMap, colorMapValue.c_str(), sizeof(newConfig.lineColorMap));
 
         // Log configuration
         logTimestamp();
         Serial.print("Line color map updated: ");
-        Serial.println(newConfig.lineColorMap);
+        Serial.println(strlen(newConfig.lineColorMap) > 0 ? newConfig.lineColorMap : "(empty - using defaults)");
     }
 
     newConfig.configured = true;

@@ -32,10 +32,10 @@ public:
      * @param config Configuration with API key, stop IDs, and filters
      * @return APIResult with departures, count, and error status
      */
-    APIResult fetchDepartures(const Config& config);
+    APIResult fetchDepartures(const Config &config);
 
 private:
-    static constexpr int MAX_TEMP_DEPARTURES = 30;
+    static constexpr int MAX_TEMP_DEPARTURES = 36;
     static constexpr int JSON_BUFFER_SIZE = 8192;
     static constexpr int HTTP_TIMEOUT_MS = 10000;
 
@@ -49,9 +49,9 @@ private:
      * @param isFirstStop Whether this is the first stop being queried
      * @return true if query succeeded
      */
-    bool querySingleStop(const char* stopId, const Config& config,
-                        Departure* tempDepartures, int& tempCount,
-                        char* stopName, bool& isFirstStop);
+    bool querySingleStop(const char *stopId, const Config &config,
+                         Departure *tempDepartures, int &tempCount,
+                         char *stopName, bool &isFirstStop);
 
     /**
      * Parse departure JSON object and add to temp array
@@ -59,7 +59,7 @@ private:
      * @param tempDepartures Array to add to
      * @param tempCount Current count (will be incremented)
      */
-    void parseDepartureObject(JsonObject depJson, Departure* tempDepartures, int& tempCount);
+    void parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount);
 };
 
 #endif // GOLEMIOAPI_H

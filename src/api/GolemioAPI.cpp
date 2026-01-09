@@ -9,7 +9,7 @@ GolemioAPI::GolemioAPI()
 {
 }
 
-GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config& config)
+GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
 {
     APIResult result = {};
     result.departureCount = 0;
@@ -37,7 +37,7 @@ GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config& config)
     char stopIdsCopy[128];
     strlcpy(stopIdsCopy, config.stopIds, sizeof(stopIdsCopy));
 
-    char* stopId = strtok(stopIdsCopy, ",");
+    char *stopId = strtok(stopIdsCopy, ",");
     bool firstStop = true;
 
     while (stopId != NULL && tempCount < MAX_TEMP_DEPARTURES)
@@ -53,6 +53,8 @@ GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config& config)
         }
 
         querySingleStop(stopId, config, tempDepartures, tempCount, result.stopName, firstStop);
+
+        delay(1000);
 
         stopId = strtok(NULL, ",");
     }
@@ -95,9 +97,9 @@ GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config& config)
     return result;
 }
 
-bool GolemioAPI::querySingleStop(const char* stopId, const Config& config,
-                                 Departure* tempDepartures, int& tempCount,
-                                 char* stopName, bool& isFirstStop)
+bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
+                                 Departure *tempDepartures, int &tempCount,
+                                 char *stopName, bool &isFirstStop)
 {
     logTimestamp();
     Serial.print("API: Querying stop ");
@@ -139,7 +141,7 @@ bool GolemioAPI::querySingleStop(const char* stopId, const Config& config,
         // Get stop name from first stop (for display)
         if (isFirstStop && doc.containsKey("stops") && doc["stops"].size() > 0)
         {
-            const char* name = doc["stops"][0]["stop_name"];
+            const char *name = doc["stops"][0]["stop_name"];
             if (name)
             {
                 strlcpy(stopName, name, 64);
@@ -177,10 +179,10 @@ bool GolemioAPI::querySingleStop(const char* stopId, const Config& config,
     }
 }
 
-void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure* tempDepartures, int& tempCount)
+void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount)
 {
     // Route/Line info
-    const char* line = depJson["route"]["short_name"];
+    const char *line = depJson["route"]["short_name"];
     if (line)
     {
         strlcpy(tempDepartures[tempCount].line, line, sizeof(tempDepartures[0].line));
@@ -191,7 +193,7 @@ void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure* tempDepartu
     }
 
     // Destination/Headsign
-    const char* headsign = depJson["trip"]["headsign"];
+    const char *headsign = depJson["trip"]["headsign"];
     if (headsign)
     {
         strlcpy(tempDepartures[tempCount].destination, headsign, sizeof(tempDepartures[0].destination));
@@ -204,7 +206,7 @@ void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure* tempDepartu
     }
 
     // Calculate ETA from departure timestamp
-    const char* timestamp = depJson["departure_timestamp"]["predicted"];
+    const char *timestamp = depJson["departure_timestamp"]["predicted"];
     if (!timestamp)
     {
         timestamp = depJson["departure_timestamp"]["scheduled"];

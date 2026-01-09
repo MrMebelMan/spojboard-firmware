@@ -47,9 +47,9 @@ uint16_t getLineColor(const char *line)
         return COLOR_RED;
 
     // Tram lines
-    if (line[0] == '1' || line[0] == '2' && strlen(line) <= 2)
+    if ((line[0] == '1' && strlen(line) == 2) || (line[0] == '2' && strlen(line) == 2))
         return COLOR_WHITE;
-    if (line[0] == '1' || line[0] == '2' && strlen(line) == 3)
+    if ((line[0] == '1' && strlen(line) == 3) || (line[0] == '2' && strlen(line) == 3))
         return COLOR_PURPLE;
 
     // S-trains
