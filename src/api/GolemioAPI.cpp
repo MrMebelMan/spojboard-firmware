@@ -79,11 +79,11 @@ GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
     result.departureCount = 0;
     for (int i = 0; i < tempCount && result.departureCount < MAX_DEPARTURES; i++)
     {
-        if (tempDepartures[i].eta >= config.minDepartureTime)
-        {
+        // if (tempDepartures[i].eta >= config.minDepartureTime) // removed as we use API for this now
+        // {
             result.departures[result.departureCount] = tempDepartures[i];
             result.departureCount++;
-        }
+        // }
     }
 
     logTimestamp();
@@ -115,9 +115,10 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
 
     // Query each stop individually with higher total to get more results
     snprintf(url, sizeof(url),
-             "https://api.golemio.cz/v2/pid/departureboards?ids=%s&total=%d&preferredTimezone=Europe/Prague&minutesBefore=0&minutesAfter=120",
+             "https://api.golemio.cz/v2/pid/departureboards?ids=%s&total=%d&preferredTimezone=Europe/Prague&minutesBefore=%d&minutesAfter=120",
              stopId,
-             config.numDepartures > MAX_DEPARTURES ? MAX_DEPARTURES : config.numDepartures);
+             config.numDepartures > MAX_DEPARTURES ? MAX_DEPARTURES : config.numDepartures,
+             config.minDepartureTime > 0 ? config.minDepartureTime * -1 : 0);
 
     http.begin(url);
     http.addHeader("x-access-token", config.apiKey);
