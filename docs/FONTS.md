@@ -249,9 +249,12 @@ SpojBoard includes three custom fonts optimized for LED matrix display:
 The display automatically chooses the appropriate font based on destination length:
 
 ```cpp
-// From DisplayManager.cpp:106-125
-int destLen = strlen(dep.destination);
+// From DisplayManager.cpp:114-132
+int destLen = strlen(destConverted);
 int normalMaxChars = dep.hasAC ? 14 : 15;  // AC indicator takes space
+
+// Adjust for ETA width BEFORE font selection (2-digit and 3-digit numbers)
+normalMaxChars -= (dep.eta >= 100 ? 2 : (dep.eta >= 10 ? 1 : 0));
 
 if (destLen > normalMaxChars) {
     // Long destination - use condensed font
@@ -263,12 +266,10 @@ if (destLen > normalMaxChars) {
     maxChars = normalMaxChars;
 }
 
-// Adjust for ETA width (2-digit and 3-digit numbers)
-if (dep.eta >= 100) {
-    maxChars -= (useCondensed ? 3 : 2);
-} else if (dep.eta >= 10) {
-    maxChars -= (useCondensed ? 2 : 1);
-}
+// Font selection is based on adjusted normalMaxChars that already accounts for:
+// - AC indicator (reduces by 1 character)
+// - ETA width (2-digit: -1 char, 3-digit: -2 chars)
+// Condensed font always gets 23 characters max (no further ETA reduction)
 ```
 
 ## Character Set Coverage

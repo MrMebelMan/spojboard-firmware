@@ -115,32 +115,20 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     int normalMaxChars = dep.hasAC ? 14 : 15;
     const GFXfont* destFont;
     int maxChars;
-    bool useCondensed = false;
+
+    normalMaxChars -= (dep.eta >= 100 ? 2 : (dep.eta >= 10 ? 1 : 0));
 
     if (destLen > normalMaxChars)
     {
         // Long destination - use condensed font
         destFont = fontCondensed;
         maxChars = 23;
-        useCondensed = true;
     }
     else
     {
         // Short destination - use regular font
         destFont = fontMedium;
         maxChars = normalMaxChars;
-        useCondensed = false;
-    }
-
-    // Adjust for ETA width (2-digit and 3-digit numbers take more space)
-    // Condensed font needs more reduction due to narrower characters
-    if (useCondensed)
-    {
-        maxChars -= (dep.eta >= 100 ? 3 : (dep.eta >= 10 ? 2 : 1));
-    }
-    else
-    {
-        maxChars -= (dep.eta >= 100 ? 2 : (dep.eta >= 10 ? 1 : 0));
     }
 
     display->setFont(destFont);
@@ -153,18 +141,10 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     display->print(destTrunc);
 
     // ETA display
-    int etaCursor = 111;
-    if (dep.eta >= 100)
-    {
-        etaCursor = 105;
-    }
-    else if (dep.eta >= 10 || dep.eta < 1)
+    int etaCursor = 117;
+    if (dep.eta >= 10 || dep.eta < 1)
     {
         etaCursor = 111;
-    }
-    else
-    {
-        etaCursor = 117;
     }
 
     display->setFont(fontMedium);
@@ -196,7 +176,13 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     }
     else if (dep.eta >= 60)
     {
-        display->print(">1h");
+        display->setCursor(etaCursor - 2, y + 7);
+        display->print(">");
+        display->setCursor(etaCursor + 6, y + 7);
+        display->print("1");
+        display->setFont(fontCondensed);
+        display->print("h");
+        display->setFont(fontMedium);
     }
     else
     {
@@ -354,7 +340,8 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
                                    bool wifiConnected, bool apModeActive,
                                    const char *apSSID, const char *apPassword,
                                    bool apiError, const char *apiErrorMsg,
-                                   const char *stopName, bool apiKeyConfigured)
+                                   const char *stopName, bool apiKeyConfigured,
+                                   bool demoModeActive)
 {
     if (isDrawing)
         return;
@@ -362,6 +349,28 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
     isDrawing = true;
     display->clearScreen();
     delay(1);
+
+    // Demo mode has highest priority - bypass all status screens
+    // and show demo departures regardless of WiFi/API/config state
+    if (demoModeActive)
+    {
+        // Draw demo departures directly
+        int rowsToDraw = (departureCount < numToDisplay) ? departureCount : numToDisplay;
+        if (rowsToDraw > 3)
+            rowsToDraw = 3; // Maximum 3 rows on display
+
+        for (int i = 0; i < rowsToDraw; i++)
+        {
+            drawDeparture(i, departures[i]);
+            delay(1);
+        }
+
+        drawDateTime();
+        delay(1);
+
+        isDrawing = false;
+        return;
+    }
 
     // AP Mode - Show credentials
     if (apModeActive)

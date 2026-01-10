@@ -89,7 +89,7 @@ const GFXglyph DepartureMono_Regular5pt8bGlyphs[] PROGMEM = {
   {    11,   5,   9,   6,    1,   -7 },   // 0x24 '$'
   {    18,   5,   7,   6,    1,   -6 },   // 0x25 '%'
   {    23,   6,   7,   6,    1,   -6 },   // 0x26 '&'
-  {    29,   1,   3,   6,    3,   -6 },   // 0x27 '''
+  {    29,   1,   3,   6,    2,   -6 },   // 0x27 '''
   {    30,   3,   9,   6,    2,   -7 },   // 0x28 '('
   {    34,   3,   9,   6,    2,   -7 },   // 0x29 ')'
   {    38,   5,   5,   6,    1,   -6 },   // 0x2A '*'
@@ -112,7 +112,7 @@ const GFXglyph DepartureMono_Regular5pt8bGlyphs[] PROGMEM = {
   {   103,   2,   6,   6,    2,   -4 },   // 0x3B ';'
   {   105,   3,   6,   6,    1,   -5 },   // 0x3C '<'
   {   108,   4,   3,   6,    1,   -4 },   // 0x3D '='
-  {   110,   3,   6,   6,    2,   -5 },   // 0x3E '>'
+  {   110,   3,   6,   6,    3,   -5 },   // 0x3E '>'
   {   113,   5,   7,   6,    1,   -6 },   // 0x3F '?'
   {   118,   5,   7,   6,    1,   -6 },   // 0x40 '@'
   {   123,   5,   7,   6,    1,   -6 },   // 0x41 'A'
@@ -277,7 +277,7 @@ const GFXglyph DepartureMono_Regular5pt8bGlyphs[] PROGMEM = {
 };
 
 const GFXfont DepartureMono_Regular5pt8b PROGMEM = {
-    (uint8_t *)DepartureMono_Regular5pt8bBitmaps,      
-    (GFXglyph *)DepartureMono_Regular5pt8bGlyphs, 0x20, 0xDF,       12};
+    (uint8_t *)DepartureMono_Regular5pt8bBitmaps,       
+    (GFXglyph *)DepartureMono_Regular5pt8bGlyphs, 0x20, 0xDF,        12};
 
 // Approx. 2277 bytes

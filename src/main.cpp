@@ -99,6 +99,13 @@ void recalculateETAs()
     }
 
     departureCount = validCount;
+
+    // Resort departures by ETA after recalculation
+    if (departureCount > 1)
+    {
+        qsort(departures, departureCount, sizeof(Departure), compareDepartures);
+    }
+
     needsDisplayUpdate = true;
 }
 
@@ -362,7 +369,8 @@ void loop()
                                          wifiManager.isConnected(), wifiManager.isAPMode(),
                                          wifiManager.getAPSSID(), wifiManager.getAPPassword(),
                                          apiError, apiErrorMsg,
-                                         stopName, config.configured && strlen(config.apiKey) > 0);
+                                         stopName, config.configured && strlen(config.apiKey) > 0,
+                                         demoModeActive);
         }
 
         delay(10);
@@ -431,7 +439,8 @@ void loop()
                                      wifiManager.isConnected(), wifiManager.isAPMode(),
                                      wifiManager.getAPSSID(), wifiManager.getAPPassword(),
                                      apiError, apiErrorMsg,
-                                     stopName, config.configured && strlen(config.apiKey) > 0);
+                                     stopName, config.configured && strlen(config.apiKey) > 0,
+                                     demoModeActive);
     }
 
     // Periodic display update (for time) - now handled by ETA recalc every 10s

@@ -47,12 +47,14 @@ public:
      * @param apiErrorMsg API error message
      * @param stopName Current stop name
      * @param apiKeyConfigured Whether API key is configured
+     * @param demoModeActive Whether demo mode is active (has highest priority, overrides ALL status screens)
      */
     void updateDisplay(const Departure* departures, int departureCount, int numToDisplay,
                       bool wifiConnected, bool apModeActive,
                       const char* apSSID, const char* apPassword,
                       bool apiError, const char* apiErrorMsg,
-                      const char* stopName, bool apiKeyConfigured);
+                      const char* stopName, bool apiKeyConfigured,
+                      bool demoModeActive = false);
 
     /**
      * Draw status message (for temporary status during setup)
