@@ -48,8 +48,8 @@ public:
 
 private:
     APIStatusCallback statusCallback;
-    static constexpr int MAX_TEMP_DEPARTURES = MAX_DEPARTURES * 4;  // Buffer for collecting from multiple stops
-    static constexpr int JSON_BUFFER_SIZE = 8192;
+    static constexpr int MAX_TEMP_DEPARTURES = MAX_DEPARTURES * 12;  // Buffer for up to 12 stops at full capacity
+    static constexpr int JSON_BUFFER_SIZE = 12288;  // 12KB - handles busy stops with many departures
     static constexpr int HTTP_TIMEOUT_MS = 10000;
 
     /**

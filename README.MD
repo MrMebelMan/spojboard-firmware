@@ -10,12 +10,18 @@ No external server required - standalone operation with web-based configuration!
 
 **[📸 View More Screenshots](docs/SCREENSHOTS.md)**
 
+## Documentation
+
+- **[Architecture & Data Flow](docs/ARCHITECTURE.md)** - Technical details, pipeline flow, and design rationale
+- **[Font System](docs/FONTS.md)** - Czech character support and custom font creation guide
+- **[Hardware Guide for Generic ESP32-S3](docs/GENERIC_ESP32S3.md)** - Alternative hardware setup
+
 ## Features
 
-- **Direct API Access**: Fetches departure data from Golemio PID API every 30-300 seconds (configurable)
+- **Direct API Access**: Fetches departure data from Golemio PID API every 10-300 seconds (configurable)
 - **Smart ETA Updates**: Recalculates ETAs every 10 seconds from cached timestamps without additional API calls - reduces server load while keeping display fresh
-- **Extended Buffer**: Caches up to 12 departures (configurable 1-12), perfect for longer refresh intervals during peak times
-- **Multi-Stop Support**: Query multiple stops simultaneously, automatically sorted by departure time
+- **Extended Buffer**: Always fetches and caches 12 departures per stop for optimal sorting and filtering
+- **Multi-Stop Support**: Query up to 12 stops simultaneously (144 departure buffer), automatically sorted by departure time with 1s rate limiting
 - **WiFi Setup Portal**: Automatic AP mode with captive portal when WiFi fails - no code editing needed!
 - **Web Configuration**: Easy setup via built-in web interface
 - **Persistent Settings**: Configuration stored in ESP32 flash memory, survives reboots
@@ -64,7 +70,7 @@ HUB75 LED matrix panels require external 5V power.
 
 ### First Time Setup (AP Mode)
 
-1. **Flash the Firmware**
+1. **Build & Flash the Firmware**
    ```bash
    pio run -t upload
    ```
@@ -109,9 +115,9 @@ The built-in web server provides:
 - **Configuration Form**:
   - WiFi credentials
   - Golemio API key
-  - Stop ID(s) - comma-separated for multiple stops
+  - Stop ID(s) - comma-separated for multiple stops (max 12)
   - Refresh interval (10-300 seconds)
-  - Number of departures to cache (1-12)
+  - Number of departures to display (1-3 rows)
   - Minimum departure time (0-30 minutes) - filter out departures too soon to catch
   - Display brightness (0-255)
   - Custom line colors with pattern matching (e.g., "9*/9**" for all night lines)
@@ -340,6 +346,8 @@ src/
 
 ## Technical Details
 
+For detailed information about the data flow pipeline, memory allocation, and design decisions, see **[Architecture & Data Flow](docs/ARCHITECTURE.md)**.
+
 ### AP Mode Credentials
 - SSID: `SpojBoard-XXXX` (XXXX = last 4 chars of MAC address)
 - Password: 8 random alphanumeric characters (regenerated each time)
@@ -360,16 +368,16 @@ The device implements captive portal detection for:
 - Flash usage: 94.7% (1.24MB used of 1.31MB)
 
 ### Multi-Stop Behavior
-When multiple stop IDs are configured (comma-separated), the system:
-1. Queries each stop individually via separate API calls (with 1-second delay between calls to reduce server load)
-2. Collects all departures (up to 48 total from temporary buffer)
-3. Sorts by ETA (earliest departures first)
-4. Applies minimum departure time filter
-5. Caches the top 12 results with departure timestamps for ETA recalculation
-6. Displays the top 3 of the configured number of departures (1-12)
-7. Recalculates ETAs every 10 seconds from cached timestamps, filtering out stale departures
+When multiple stop IDs are configured (comma-separated, max 12 stops), the system:
+1. Queries each stop individually via separate API calls (always fetches 12 departures per stop)
+2. Applies 1-second delay between API calls to reduce server load and avoid rate limiting
+3. Collects all departures in temporary buffer (capacity: 144 total = 12 stops × 12 departures)
+4. Sorts by ETA (earliest departures first across all stops)
+5. Caches the top 12 soonest departures with timestamps for ETA recalculation
+6. Displays the configured number of rows (1-3) on the LED matrix
+7. Recalculates ETAs every 10 seconds from cached timestamps without additional API calls
 
-This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from. The 1-second delay between API calls helps avoid rate limiting and reduces load on the Golemio API servers. The 10-second ETA recalculation keeps the display fresh without additional API calls, allowing longer refresh intervals (up to 300s) during peak times.
+This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from. The API always fetches 12 departures per stop for optimal caching and sorting - the user only controls how many rows (1-3) to display on the LED matrix. The 10-second ETA recalculation keeps the display fresh without hammering the API, allowing longer refresh intervals (up to 300s) during peak times.
 
 ### Destination String Shortening
 To maximize display space on the 128×32 LED matrix, long Czech destination names are automatically shortened before display:
@@ -380,108 +388,11 @@ To maximize display space on the 128×32 LED matrix, long Czech destination name
 
 Combined with adaptive font rendering (condensed font for destinations >16 chars), even very long station names fit comfortably on the display. Shortening is applied before UTF-8 to ISO-8859-2 conversion, ensuring Czech diacritics are preserved correctly.
 
-## Czech Character Support
+## Fonts & Czech Character Support
 
-This project implements full support for Czech diacritical characters using a custom 8-bit font system.
+SpojBoard uses custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion to perfectly display Czech diacritics (**ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý**) from the Golemio API.
 
-### The Problem
-Standard Adafruit GFX fonts use 7-bit encoding (ASCII 0x20-0x7E), which doesn't include Czech characters like **ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý**. The Golemio API returns station names in UTF-8 encoding (e.g., "Nádraží Hostivař", "Karlovo náměstí").
-
-### The Solution
-We use **8-bit ISO-8859-2 fonts** with automatic UTF-8 conversion:
-
-1. **Custom Fonts**: Generated from TrueType fonts using `fontconvert8` tool
-   - Character range: 0x20-0xDF (192 printable characters)
-   - Includes full Latin Extended-A for Central European languages
-   - Stored as Adafruit GFX format in PROGMEM
-
-2. **UTF-8 Decoder**: Converts multi-byte UTF-8 to Unicode code points (RFC 3629)
-   - Located in `src/utils/decodeutf8.cpp/h`
-
-3. **ISO-8859-2 Mapper**: Maps Unicode to ISO-8859-2 with GFX encoding
-   - Characters 0xA0-0xFF are shifted by -32 to fit in 0x80-0xDF range
-   - Located in `src/utils/gfxlatin2.cpp/h`
-   - In-place conversion using `utf8tocp(char* str)` function
-
-**Example conversion**:
-```
-UTF-8: "Nádraží"    → Bytes: 0x4E 0xC3 0xA1 0x64 0x72 0x61 0xC5 0xBE 0xC3 0xAD
-                     ↓ decode UTF-8
-Unicode: N á d r a ž í → Code points: U+004E U+00E1 U+0064 U+0072 U+0061 U+017E U+00ED
-                     ↓ map to ISO-8859-2 with shift
-ISO-8859-2: 0x4E 0xC1 0x64 0x72 0x61 0xBE 0xCD → Display correctly on LED matrix
-```
-
-**Credit**: Based on work by [Michel Deslierres](https://sigmdel.ca/michel/program/misc/gfxfont_8bit_en.html) and adapted from [Petr Brouzda's fontconvert8-iso8859-2](https://github.com/petrbrouzda/fontconvert8-iso8859-2).
-
-## Creating Custom Fonts
-
-To create your own 8-bit ISO-8859-2 fonts:
-
-### Prerequisites
-- TrueFont (.ttf) or OpenType (.otf) font file
-- Modified fontconvert8 tool (works on Mac M-series)
-
-### Using fontconvert8-iso8859-2
-
-The [fontconvert8-iso8859-2](https://github.com/petrbrouzda/fontconvert8-iso8859-2) repository contains the necessary tools with modifications for macOS compatibility.
-
-**Basic usage**:
-```bash
-# Clone the tool repository
-git clone https://github.com/petrbrouzda/fontconvert8-iso8859-2.git
-cd fontconvert8-iso8859-2/fontconvert8
-
-# Build the tool (may need modifications for M-series Macs)
-make
-
-# Convert a font
-./fontconvert YourFont.ttf 12 > YourFont12pt8b.h
-```
-
-**Font naming convention**: `FontName[size]pt8b.h`
-- `8b` = 8-bit encoding
-- Size = point size
-
-### Integration Steps
-
-1. **Generate the font file** with fontconvert8
-2. **Copy to `src/fonts` directory** in your project
-3. **Include in the appropriate module** (e.g., `src/display/DisplayManager.cpp`):
-   ```cpp
-   #include "../fonts/YourFont12pt8b.h"
-   ```
-4. **Set as active font** in your display code:
-   ```cpp
-   const GFXfont *fontMedium = &YourFont12pt8b;
-   display->setFont(fontMedium);
-   ```
-5. **Rebuild and flash**
-
-### Mac M-Series Compatibility
-The original fontconvert8 tool may require modifications to compile on Apple Silicon. The fork used in this project includes necessary adjustments for ARM64 architecture. If you encounter build issues, you may need to:
-- Update Makefile compiler flags
-- Install FreeType2 via Homebrew (`brew install freetype`)
-- Adjust include paths for ARM architecture
-
-### Fine-Tuning with GFX Font Customiser
-
-After generating fonts with fontconvert8, you can fine-tune individual characters using the [Adafruit GFX Font Customiser by tchapi](https://tchapi.github.io/Adafruit-GFX-Font-Customiser/).
-
-This web-based tool allows you to:
-- **Visualize** the generated font in a browser
-- **Edit individual glyphs** pixel by pixel
-- **Adjust spacing** and kerning
-- **Add or modify characters** not in the original font
-- **Export** the modified font as a .h file
-
-**Workflow**:
-1. Generate base font with fontconvert8
-2. Open the .h file in the GFX Font Customiser
-3. Make visual adjustments to improve readability on LED matrix
-4. Export and replace the original .h file
-
-The fonts in this project (DepartureMono4pt8b, DepartureMono5pt8b) were customized using this tool to optimize character spacing and appearance on the 128×32 LED matrix display.
+For complete details on the font system, UTF-8 conversion, and creating custom fonts, see **[Font System Documentation](docs/FONTS.md)**.
 
 ## License
 

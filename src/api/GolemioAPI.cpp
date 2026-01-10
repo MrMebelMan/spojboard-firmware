@@ -116,11 +116,11 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
     HTTPClient http;
     char url[512];
 
-    // Query each stop individually with higher total to get more results
+    // Query each stop with MAX_DEPARTURES to ensure good caching and sorting
     snprintf(url, sizeof(url),
              "https://api.golemio.cz/v2/pid/departureboards?ids=%s&total=%d&preferredTimezone=Europe/Prague&minutesBefore=%d&minutesAfter=120",
              stopId,
-             config.numDepartures > MAX_DEPARTURES ? MAX_DEPARTURES : config.numDepartures,
+             MAX_DEPARTURES,
              config.minDepartureTime > 0 ? config.minDepartureTime * -1 : 0);
 
     http.begin(url);

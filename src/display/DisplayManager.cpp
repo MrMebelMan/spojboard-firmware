@@ -225,7 +225,7 @@ void DisplayManager::drawDateTime()
     char dateStr[7];
     strftime(dateStr, 7, "%b %d", &timeinfo);
     utf8tocp(dateStr); // Convert Czech month names
-    display->setCursor(22, y + 7);
+    display->setCursor(19, y + 7);
     display->print(dateStr);
 
     // Time
@@ -409,6 +409,57 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
 
     drawDateTime();
     delay(1);
+
+    isDrawing = false;
+}
+
+void DisplayManager::drawFontTest()
+{
+    if (isDrawing)
+        return;
+
+    isDrawing = true;
+    display->clearScreen();
+
+    // Czech special characters test string (UTF-8)
+    char testString[64];
+    strcpy(testString, "ĚŠČŘŽÝÁÍÉÚŮĎŤŇ");
+
+    // Convert UTF-8 to ISO-8859-2 for display
+    utf8tocp(testString);
+
+    // Row 0: Small font (4pt)
+    display->setFont(fontSmall);
+    display->setTextColor(COLOR_CYAN);
+    display->setCursor(2, 7);
+    display->print("Small:");
+    display->setTextColor(COLOR_WHITE);
+    display->setCursor(35, 7);
+    display->print(testString);
+
+    // Row 1: Medium font (5pt)
+    display->setFont(fontMedium);
+    display->setTextColor(COLOR_GREEN);
+    display->setCursor(2, 15);
+    display->print("Med:");
+    display->setTextColor(COLOR_WHITE);
+    display->setCursor(28, 15);
+    display->print(testString);
+
+    // Row 2: Condensed font (5pt)
+    display->setFont(fontCondensed);
+    display->setTextColor(COLOR_YELLOW);
+    display->setCursor(2, 23);
+    display->print("Cond:");
+    display->setTextColor(COLOR_WHITE);
+    display->setCursor(32, 23);
+    display->print(testString);
+
+    // Row 3: Status
+    display->setFont(fontSmall);
+    display->setTextColor(COLOR_PURPLE);
+    display->setCursor(2, 31);
+    display->print("Czech char test OK");
 
     isDrawing = false;
 }

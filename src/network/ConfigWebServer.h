@@ -114,6 +114,7 @@ private:
     void handleUpdateComplete();   // POST: handle firmware upload completion
     void handleCheckUpdate();      // GET: check GitHub for updates (AJAX)
     void handleDownloadUpdate();   // POST: download and install from GitHub (AJAX)
+    void handleFontTest();         // POST: display font test screen
     void handleNotFound();
 
     // OTA progress callbacks (static for use as function pointers)

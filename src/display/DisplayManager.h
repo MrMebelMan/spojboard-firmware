@@ -80,6 +80,11 @@ public:
      */
     MatrixPanel_I2S_DMA* getDisplay() { return display; }
 
+    /**
+     * Draw font test screen with Czech special characters
+     */
+    void drawFontTest();
+
 private:
     MatrixPanel_I2S_DMA* display;
     bool isDrawing;

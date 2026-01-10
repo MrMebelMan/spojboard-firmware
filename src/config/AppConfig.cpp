@@ -12,7 +12,7 @@ void loadConfig(Config& config)
     strlcpy(config.apiKey, preferences.getString("apiKey", "").c_str(), sizeof(config.apiKey));
     strlcpy(config.stopIds, preferences.getString("stopIds", "U693Z2P").c_str(), sizeof(config.stopIds));
     config.refreshInterval = preferences.getInt("refresh", 60);  // Increased to 60s to reduce API load
-    config.numDepartures = preferences.getInt("numDeps", 8);     // Increased to 8 for better caching
+    config.numDepartures = preferences.getInt("numDeps", 3);     // Display rows (1-3)
     config.minDepartureTime = preferences.getInt("minDepTime", 3);
     config.brightness = preferences.getInt("brightness", 90);
     strlcpy(config.lineColorMap, preferences.getString("lineColorMap", "").c_str(), sizeof(config.lineColorMap));

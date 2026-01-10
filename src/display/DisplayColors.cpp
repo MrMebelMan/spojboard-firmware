@@ -49,8 +49,9 @@ uint16_t getLineColor(const char *line)
     // Tram lines
     if ((line[0] >= '1' && line[0] <= '9' && strlen(line) == 1) || (line[0] == '1' && strlen(line) == 2) || (line[0] == '2' && strlen(line) == 2))
         return COLOR_WHITE; // Trams 1-29
-    if ((line[0] == '1' && strlen(line) == 3) || (line[0] == '2' && strlen(line) == 3))
-        return COLOR_PURPLE; // 3-digit trams 100-299
+    // Bus & T-Bus lines
+    if ((line[0] == '5' && strlen(line) == 2) || (line[0] == '1' && strlen(line) == 3) || (line[0] == '2' && strlen(line) == 3))
+        return COLOR_PURPLE; // Buses 100-299, T-Bus 50-59
 
     // S-trains
     if (line[0] == 'S')

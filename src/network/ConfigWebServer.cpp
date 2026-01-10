@@ -5,6 +5,21 @@
 #include <Update.h>
 #include <string.h>
 
+// Helper function to count stops in comma-separated list
+static int countStops(const char* stopIds) {
+    if (!stopIds || stopIds[0] == '\0') {
+        return 0;
+    }
+
+    int count = 1;  // At least one stop if string is not empty
+    for (const char* p = stopIds; *p; p++) {
+        if (*p == ',') {
+            count++;
+        }
+    }
+    return count;
+}
+
 // HTML Templates
 // Static instance pointer for OTA callback
 ConfigWebServer *ConfigWebServer::instanceForCallback = nullptr;
@@ -106,6 +121,8 @@ bool ConfigWebServer::begin()
                { handleCheckUpdate(); });
     server->on("/download-update", HTTP_POST, [this]()
                { handleDownloadUpdate(); });
+    server->on("/font-test", HTTP_POST, [this]()
+               { handleFontTest(); });
     server->onNotFound([this]()
                        { handleNotFound(); });
 
@@ -288,8 +305,8 @@ void ConfigWebServer::handleRoot()
     html += "<div><label>Refresh Interval (sec)</label>";
     html += "<input type='number' name='refresh' value='" + String(currentConfig->refreshInterval) + "' min='10' max='300'></div>";
 
-    html += "<div><label>Number of Departures</label>";
-    html += "<input type='number' name='numdeps' value='" + String(currentConfig->numDepartures) + "' min='1' max='" + String(MAX_DEPARTURES) + "'></div>";
+    html += "<div><label>Number of Departures to Display (1-3 rows)</label>";
+    html += "<input type='number' name='numdeps' value='" + String(currentConfig->numDepartures) + "' min='1' max='3'></div>";
 
     html += "<div><label>Min Departure Time (min)</label>";
     html += "<input type='number' name='mindeptime' value='" + String(currentConfig->minDepartureTime) + "' min='0' max='30'></div>";
@@ -405,6 +422,9 @@ void ConfigWebServer::handleRoot()
         html += "</form>";
         html += "<form id='checkUpdateForm' onsubmit='checkForUpdate(event); return false;' style='display:inline; margin-top:10px'>";
         html += "<button type='submit' id='checkUpdateBtn'>Check for Updates</button>";
+        html += "</form>";
+        html += "<form method='POST' action='/font-test' style='display:inline; margin-top:10px'>";
+        html += "<button type='submit'>Test Czech Fonts</button>";
         html += "</form>";
         html += "<form method='POST' action='/reboot' style='display:inline; margin-top:10px'>";
         html += "<button type='submit' class='danger'>Reboot Device</button>";
@@ -652,6 +672,18 @@ void ConfigWebServer::handleSave()
     if (server->hasArg("stops"))
     {
         strlcpy(newConfig.stopIds, server->arg("stops").c_str(), sizeof(newConfig.stopIds));
+
+        // Validate maximum number of stops (with 1s delay per stop, 12 stops = 12s+ query time)
+        int numStops = countStops(newConfig.stopIds);
+        if (numStops > 12)
+        {
+            server->send(400, "text/plain",
+                "Error: Too many stops configured (max 12). Please reduce the number of stops.\n"
+                "With 1-second delay between API calls, 12 stops takes 12+ seconds to query.");
+            logTimestamp();
+            debugPrintln("Config save failed: too many stops");
+            return;
+        }
     }
     if (server->hasArg("refresh"))
     {
@@ -666,8 +698,8 @@ void ConfigWebServer::handleSave()
         newConfig.numDepartures = server->arg("numdeps").toInt();
         if (newConfig.numDepartures < 1)
             newConfig.numDepartures = 1;
-        if (newConfig.numDepartures > MAX_DEPARTURES)
-            newConfig.numDepartures = MAX_DEPARTURES;
+        if (newConfig.numDepartures > 3)
+            newConfig.numDepartures = 3;  // Max 3 rows on display
     }
     if (server->hasArg("mindeptime"))
     {
@@ -1113,4 +1145,16 @@ void ConfigWebServer::handleDownloadUpdate()
     {
         server->send(500, "application/json", "{\"success\":false,\"error\":\"Download or installation failed\"}");
     }
+}
+
+void ConfigWebServer::handleFontTest()
+{
+    // Show font test screen on display
+    if (displayManager != nullptr)
+    {
+        displayManager->drawFontTest();
+    }
+
+    server->sendHeader("Location", "/");
+    server->send(302, "text/plain", "");
 }
