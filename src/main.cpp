@@ -4,6 +4,7 @@
 #include "utils/Logger.h"
 #include "utils/TimeUtils.h"
 #include "utils/gfxlatin2.h"
+#include "utils/TelnetLogger.h"
 #include "config/AppConfig.h"
 #include "api/DepartureData.h"
 #include "api/GolemioAPI.h"
@@ -39,6 +40,7 @@ int departureCount = 0;
 // ============================================================================
 unsigned long lastApiCall = 0;
 unsigned long lastDisplayUpdate = 0;
+unsigned long lastEtaRecalc = 0;  // For 10-second ETA recalculation
 bool needsDisplayUpdate = false;
 bool apiError = false;
 char apiErrorMsg[64] = "";
@@ -55,6 +57,48 @@ char stopName[64] = "";
 void onAPIStatus(const char* message)
 {
     displayManager.drawStatus(message, "", COLOR_YELLOW);
+}
+
+// ============================================================================
+// ETA Recalculation - Updates ETAs from cached timestamps every 10s
+// ============================================================================
+void recalculateETAs()
+{
+    // Recalculate ETAs from cached departureTime timestamps
+    // Filter out stale departures (past their departure time)
+    time_t now;
+    time(&now);
+
+    int validCount = 0;
+    for (int i = 0; i < departureCount; i++)
+    {
+        int diffSec = difftime(departures[i].departureTime, now);
+        int eta = (diffSec > 0) ? (diffSec / 60) : 0;
+
+        // Only keep departures that haven't passed yet
+        if (eta > 0)
+        {
+            // Copy departure if we're filtering out previous entries
+            if (validCount != i)
+            {
+                departures[validCount] = departures[i];
+            }
+            departures[validCount].eta = eta;
+            validCount++;
+        }
+    }
+
+    // Update count if we filtered any departures
+    if (validCount != departureCount)
+    {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "ETA Recalc: Filtered %d stale departures", departureCount - validCount);
+        logTimestamp();
+        debugPrintln(msg);
+    }
+
+    departureCount = validCount;
+    needsDisplayUpdate = true;
 }
 
 // ============================================================================
@@ -133,6 +177,7 @@ void setup()
     Serial.begin(115200);
     delay(1000);
 
+    // Boot banner always prints to Serial (before logger init)
     Serial.println("\n╔═══════════════════════════════════════╗");
     Serial.println("║          SpojBoard v" FIRMWARE_RELEASE "                 ║");
     Serial.println("║   Smart Panel for Onward Journeys     ║");
@@ -143,10 +188,13 @@ void setup()
     // Load configuration FIRST (needed for display brightness)
     loadConfig(config);
 
+    // Initialize logger with config for debug mode checks (MUST be after loadConfig)
+    initLogger(&config);
+
     // Initialize display with correct brightness from config
     if (!displayManager.begin(config.brightness))
     {
-        Serial.println("Display initialization failed!");
+        debugPrintln("Display initialization failed!");
         return;
     }
     displayManager.setConfig(&config);
@@ -166,7 +214,7 @@ void setup()
 
         if (!wifiManager.startAP())
         {
-            Serial.println("AP Mode failed to start!");
+            debugPrintln("AP Mode failed to start!");
             displayManager.drawStatus("AP Mode Failed!", "", COLOR_RED);
             return;
         }
@@ -174,7 +222,7 @@ void setup()
         // Start captive portal
         if (!captivePortal.begin(wifiManager.getAPIP()))
         {
-            Serial.println("Captive portal failed to start!");
+            debugPrintln("Captive portal failed to start!");
         }
     }
     else
@@ -184,6 +232,14 @@ void setup()
         sprintf(ipStr, "IP: %s", WiFi.localIP().toString().c_str());
         displayManager.drawStatus("WiFi Connected!", ipStr, COLOR_GREEN);
         delay(1500);
+
+        // Start telnet logger if debug mode enabled
+        if (config.debugMode)
+        {
+            TelnetLogger::getInstance().begin(23);
+            logTimestamp();
+            debugPrintln("Debug mode enabled - telnet logging active");
+        }
     }
 
     // Initialize web server with callbacks
@@ -191,7 +247,7 @@ void setup()
     webServer.setDisplayManager(&displayManager); // For OTA progress updates
     if (!webServer.begin())
     {
-        Serial.println("Web server failed to start!");
+        debugPrintln("Web server failed to start!");
     }
 
     // Setup captive portal detection handlers
@@ -204,7 +260,7 @@ void setup()
     if (wifiManager.isConnected() && !wifiManager.isAPMode())
     {
         logTimestamp();
-        Serial.println("Syncing time...");
+        debugPrintln("Syncing time...");
         initTimeSync();
 
         if (syncTime(10, 500))
@@ -212,9 +268,10 @@ void setup()
             char timeStr[32];
             if (getFormattedTime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S"))
             {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "Time synced: %s", timeStr);
                 logTimestamp();
-                Serial.print("Time synced: ");
-                Serial.println(timeStr);
+                debugPrintln(msg);
             }
         }
 
@@ -228,7 +285,7 @@ void setup()
 
     needsDisplayUpdate = true;
     logTimestamp();
-    Serial.println("Setup complete!\n");
+    debugPrintln("Setup complete!\n");
 }
 
 // ============================================================================
@@ -244,6 +301,12 @@ void loop()
 
     // Handle web server requests
     webServer.handleClient();
+
+    // Process telnet connections if debug enabled
+    if (config.debugMode)
+    {
+        TelnetLogger::getInstance().loop();
+    }
 
     // Update web server state for status display
     webServer.updateState(&config,
@@ -283,7 +346,7 @@ void loop()
     if (!isConnected && wasConnected)
     {
         logTimestamp();
-        Serial.println("WiFi: Disconnected!");
+        debugPrintln("WiFi: Disconnected!");
         needsDisplayUpdate = true;
 
         // Attempt reconnection
@@ -297,7 +360,7 @@ void loop()
     else if (isConnected && !wasConnected)
     {
         logTimestamp();
-        Serial.println("WiFi: Reconnected!");
+        debugPrintln("WiFi: Reconnected!");
         needsDisplayUpdate = true;
     }
     wasConnected = isConnected;
@@ -315,6 +378,17 @@ void loop()
         }
     }
 
+    // Real-time ETA recalculation every 10 seconds (only when connected and have departures)
+    if (wifiManager.isConnected() && departureCount > 0)
+    {
+        unsigned long now = millis();
+        if (now - lastEtaRecalc >= 10000 || lastEtaRecalc == 0)
+        {
+            lastEtaRecalc = now;
+            recalculateETAs();
+        }
+    }
+
     // Update display
     if (needsDisplayUpdate)
     {
@@ -326,27 +400,22 @@ void loop()
                                      stopName, config.configured && strlen(config.apiKey) > 0);
     }
 
-    // Periodic display update (for time)
-    if (millis() - lastDisplayUpdate >= 30000)
-    {
-        lastDisplayUpdate = millis();
-        needsDisplayUpdate = true;
-    }
+    // Periodic display update (for time) - now handled by ETA recalc every 10s
+    // Removed to avoid redundant updates
 
     // Status logging every 60 seconds
     static unsigned long lastStatusLog = 0;
     if (millis() - lastStatusLog >= 60000)
     {
         lastStatusLog = millis();
+        char statusMsg[128];
+        snprintf(statusMsg, sizeof(statusMsg), "STATUS: WiFi=%s | AP=%s | Deps=%d | Heap=%u",
+                 wifiManager.isConnected() ? "OK" : "FAIL",
+                 wifiManager.isAPMode() ? "ON" : "OFF",
+                 departureCount,
+                 ESP.getFreeHeap());
         logTimestamp();
-        Serial.print("STATUS: WiFi=");
-        Serial.print(wifiManager.isConnected() ? "OK" : "FAIL");
-        Serial.print(" | AP=");
-        Serial.print(wifiManager.isAPMode() ? "ON" : "OFF");
-        Serial.print(" | Deps=");
-        Serial.print(departureCount);
-        Serial.print(" | Heap=");
-        Serial.println(ESP.getFreeHeap());
+        debugPrintln(statusMsg);
     }
 
     // Let idle task run

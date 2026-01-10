@@ -31,11 +31,12 @@ GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
     }
 
     logTimestamp();
-    Serial.println("API: Fetching departures...");
+    debugPrintln("API: Fetching departures...");
     logMemory("api_start");
 
     // Temporary array to collect all departures from all stops
-    Departure tempDepartures[MAX_TEMP_DEPARTURES];
+    // IMPORTANT: Static to avoid stack overflow (~2KB array)
+    static Departure tempDepartures[MAX_TEMP_DEPARTURES];
     int tempCount = 0;
 
     // Parse comma-separated stop IDs
@@ -69,10 +70,10 @@ GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
     {
         qsort(tempDepartures, tempCount, sizeof(Departure), compareDepartures);
 
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Collected %d departures from all stops", tempCount);
         logTimestamp();
-        Serial.print("Collected ");
-        Serial.print(tempCount);
-        Serial.println(" departures from all stops");
+        debugPrintln(msg);
     }
 
     // Filter by minimum departure time and copy to final array
@@ -86,9 +87,10 @@ GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
         // }
     }
 
+    char filterMsg[64];
+    snprintf(filterMsg, sizeof(filterMsg), "Final departures after filtering: %d", result.departureCount);
     logTimestamp();
-    Serial.print("Final departures after filtering: ");
-    Serial.println(result.departureCount);
+    debugPrintln(filterMsg);
 
     // Set error status if no departures found
     if (tempCount == 0)
@@ -106,9 +108,10 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
                                  Departure *tempDepartures, int &tempCount,
                                  char *stopName, bool &isFirstStop)
 {
+    char queryMsg[96];
+    snprintf(queryMsg, sizeof(queryMsg), "API: Querying stop %s", stopId);
     logTimestamp();
-    Serial.print("API: Querying stop ");
-    Serial.println(stopId);
+    debugPrintln(queryMsg);
 
     HTTPClient http;
     char url[512];
@@ -142,12 +145,10 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
                 statusCallback(statusMsg);
             }
 
+            char retryMsg[64];
+            snprintf(retryMsg, sizeof(retryMsg), "API: Retry %d after %dms", retry, delayMs);
             logTimestamp();
-            Serial.print("API: Retry ");
-            Serial.print(retry);
-            Serial.print(" after ");
-            Serial.print(delayMs);
-            Serial.println("ms");
+            debugPrintln(retryMsg);
             delay(delayMs);
         }
 
@@ -160,20 +161,20 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
         // Don't retry on 4xx errors (client errors - won't fix with retry)
         if (httpCode >= 400 && httpCode < 500)
         {
+            char clientErrMsg[64];
+            snprintf(clientErrMsg, sizeof(clientErrMsg), "API: Client error %d - no retry", httpCode);
             logTimestamp();
-            Serial.print("API: Client error ");
-            Serial.print(httpCode);
-            Serial.println(" - no retry");
+            debugPrintln(clientErrMsg);
             break;
         }
 
         // Log retry-able errors
         if (retry < MAX_RETRIES - 1)
         {
+            char retryableErrMsg[64];
+            snprintf(retryableErrMsg, sizeof(retryableErrMsg), "API Error: HTTP %d - will retry", httpCode);
             logTimestamp();
-            Serial.print("API Error: HTTP ");
-            Serial.print(httpCode);
-            Serial.println(" - will retry");
+            debugPrintln(retryableErrMsg);
 
             // Show error on display before first retry
             if (retry == 0 && statusCallback)
@@ -201,11 +202,10 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
 
         if (error)
         {
+            char jsonErrMsg[128];
+            snprintf(jsonErrMsg, sizeof(jsonErrMsg), "JSON Parse Error for stop %s: %s", stopId, error.c_str());
             logTimestamp();
-            Serial.print("JSON Parse Error for stop ");
-            Serial.print(stopId);
-            Serial.print(": ");
-            Serial.println(error.c_str());
+            debugPrintln(jsonErrMsg);
             http.end();
             return false;
         }
@@ -241,13 +241,11 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
     }
     else
     {
+        char failMsg[128];
+        snprintf(failMsg, sizeof(failMsg), "API: Failed after %d attempts for stop %s - HTTP %d",
+                 MAX_RETRIES, stopId, httpCode);
         logTimestamp();
-        Serial.print("API: Failed after ");
-        Serial.print(MAX_RETRIES);
-        Serial.print(" attempts for stop ");
-        Serial.print(stopId);
-        Serial.print(" - HTTP ");
-        Serial.println(httpCode);
+        debugPrintln(failMsg);
         http.end();
         return false;
     }
@@ -279,7 +277,7 @@ void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartu
         tempDepartures[tempCount].destination[0] = '\0';
     }
 
-    // Calculate ETA from departure timestamp
+    // Parse and store departure timestamp
     const char *timestamp = depJson["departure_timestamp"]["predicted"];
     if (!timestamp)
     {
@@ -291,13 +289,16 @@ void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartu
         struct tm tm;
         strptime(timestamp, "%Y-%m-%dT%H:%M:%S", &tm);
         time_t depTime = mktime(&tm);
-        time_t now;
-        time(&now);
-        int diffSec = difftime(depTime, now);
-        tempDepartures[tempCount].eta = (diffSec > 0) ? (diffSec / 60) : 0;
+
+        // Store timestamp for future recalculation
+        tempDepartures[tempCount].departureTime = depTime;
+
+        // Calculate initial ETA for sorting/filtering
+        tempDepartures[tempCount].eta = calculateETA(depTime);
     }
     else
     {
+        tempDepartures[tempCount].departureTime = 0;
         tempDepartures[tempCount].eta = 0;
     }
 

@@ -22,6 +22,11 @@ ESP32-based transit departure display that fetches real-time data from Prague's 
 
 ## Build & Development Commands
 
+**IMPORTANT:** PlatformIO must be run from the Python virtual environment. Activate it first:
+```bash
+source ~/code/esp32/venv/bin/activate
+```
+
 ### Building and Uploading
 ```bash
 # Build the project
@@ -165,7 +170,7 @@ HUB75 matrix pins are hardcoded for Adafruit MatrixPortal ESP32-S3 (lines 25-40)
 - Multiple stops supported via comma separation in config.stopIds
 - Each stop queried individually with separate API calls (with 1s delay between calls)
 - All departures collected, sorted by ETA, filtered by minimum departure time, then top N displayed
-- Find IDs at: http://data.pid.cz/stops/xml/StopsByName.xml
+- Find IDs at: https://data.pid.cz/stops/json/stops.json
 
 ### Departure Data Structure
 ```cpp

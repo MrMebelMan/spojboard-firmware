@@ -282,20 +282,22 @@ void ConfigWebServer::handleRoot()
 
     html += "<label>Stop ID(s)</label>";
     html += "<input type='text' name='stops' value='" + String(currentConfig->stopIds) + "' required placeholder='e.g., U693Z2P'>";
-    html += "<p class='info'>Comma-separated PID stop IDs. Find IDs at <a href='http://data.pid.cz/stops/xml/StopsByName.xml' target='_blank'>PID data</a></p>";
+    html += "<p class='info'>Comma-separated PID stop IDs. Find IDs at <a href='https://data.pid.cz/stops/json/stops.json' target='_blank'>PID data</a></p>";
 
     html += "<div class='grid'>";
     html += "<div><label>Refresh Interval (sec)</label>";
     html += "<input type='number' name='refresh' value='" + String(currentConfig->refreshInterval) + "' min='10' max='300'></div>";
 
     html += "<div><label>Number of Departures</label>";
-    html += "<input type='number' name='numdeps' value='" + String(currentConfig->numDepartures) + "' min='1' max='6'></div>";
+    html += "<input type='number' name='numdeps' value='" + String(currentConfig->numDepartures) + "' min='1' max='" + String(MAX_DEPARTURES) + "'></div>";
 
     html += "<div><label>Min Departure Time (min)</label>";
     html += "<input type='number' name='mindeptime' value='" + String(currentConfig->minDepartureTime) + "' min='0' max='30'></div>";
 
     html += "<div><label>Display Brightness (0-255)</label>";
     html += "<input type='number' name='brightness' value='" + String(currentConfig->brightness) + "' min='0' max='255'></div>";
+
+    html += "<div style='margin-top:10px;'><label><input type='checkbox' name='debugmode' " + String(currentConfig->debugMode ? "checked" : "") + "> Enable Debug Mode (Telnet on port 23)</label></div>";
     html += "</div>";
 
     // Line Colors section (only show when not in AP mode)
@@ -499,9 +501,16 @@ async function downloadUpdate(url, size) {
             status.innerHTML = `
                 <div class='status ok'>
                     ✅ Update installed successfully! Device rebooting...
+                    <p style='margin-top:20px;'>Please wait 15-20 seconds for device to restart.</p>
                 </div>
             `;
-            setTimeout(() => window.location.reload(), 10000);
+            setTimeout(() => {
+                status.innerHTML += `
+                    <div style='margin-top:20px;'>
+                        <button onclick='window.location.reload()' style='padding:12px 24px; font-size:16px; cursor:pointer; background:#2ed573; color:#000; border:none; border-radius:8px;'>🔌 Reconnect to Device</button>
+                    </div>
+                `;
+            }, 15000);
         } else {
             status.innerHTML = `
                 <div class='status error'>
@@ -677,6 +686,9 @@ void ConfigWebServer::handleSave()
             newConfig.brightness = 255;
     }
 
+    // Debug mode checkbox (unchecked = not present in POST data)
+    newConfig.debugMode = server->hasArg("debugmode");
+
     // Line color map (always update when not in AP mode to handle empty case)
     if (!apModeActive)
     {
@@ -739,8 +751,11 @@ void ConfigWebServer::handleReboot()
 {
     String html = HTML_HEADER;
     html += "<h1>🔄 Rebooting...</h1>";
-    html += "<p>The device is rebooting. Please wait a few seconds.</p>";
-    html += "<script>setTimeout(function(){ window.location='/'; }, 5000);</script>";
+    html += "<p>The device is rebooting. Please wait 10-15 seconds for it to come back online.</p>";
+    html += "<div id='reconnect-msg' style='display:none; margin-top:20px;'>";
+    html += "<p><button onclick='window.location=\"/\"' style='padding:12px 24px; font-size:16px; cursor:pointer; background:#2ed573; color:#000; border:none; border-radius:8px;'>🔌 Reconnect to Device</button></p>";
+    html += "</div>";
+    html += "<script>setTimeout(function(){ document.getElementById('reconnect-msg').style.display='block'; }, 10000);</script>";
     html += HTML_FOOTER;
     server->send(200, "text/html", html);
 
@@ -756,10 +771,14 @@ void ConfigWebServer::handleClearConfig()
     html += "<h1>🗑️ Clearing All Settings...</h1>";
     html += "<div class='card' style='background: #ff6b6b; color: #fff;'>";
     html += "<p>All configuration has been erased from flash memory.</p>";
-    html += "<p>The device will reboot into AP (setup) mode in 6 seconds.</p>";
+    html += "<p>The device will reboot into AP (setup) mode in 10 seconds.</p>";
     html += "<p>You will need to reconfigure WiFi and API settings.</p>";
     html += "</div>";
-    html += "<script>setTimeout(function(){ window.location='/'; }, 8000);</script>";
+    html += "<div id='reconnect-msg' style='display:none; margin-top:20px;'>";
+    html += "<p><strong>Device should now be in AP mode.</strong></p>";
+    html += "<p>Look for a WiFi network starting with: <strong>SpojBoard-XXXX</strong></p>";
+    html += "</div>";
+    html += "<script>setTimeout(function(){ document.getElementById('reconnect-msg').style.display='block'; }, 15000);</script>";
     html += HTML_FOOTER;
     server->send(200, "text/html", html);
 
@@ -767,7 +786,7 @@ void ConfigWebServer::handleClearConfig()
     clearConfig();
 
     // Reboot after a short delay
-    delay(6000);
+    delay(10000);
     ESP.restart();
 }
 
@@ -911,14 +930,17 @@ void ConfigWebServer::handleUpdateComplete()
         html += "<h1>✅ Update Successful!</h1>";
         html += "<div class='card' style='background: #2ed573; color: #000;'>";
         html += "<p>Firmware has been uploaded and validated successfully.</p>";
-        html += "<p>The device will reboot in 6 seconds...</p>";
+        html += "<p>The device will reboot in 10 seconds. Please wait 15-20 seconds for it to come back online.</p>";
         html += "</div>";
-        html += "<script>setTimeout(function(){ window.location='/'; }, 8000);</script>";
+        html += "<div id='reconnect-msg' style='display:none; margin-top:20px;'>";
+        html += "<p><button onclick='window.location=\"/\"' style='padding:12px 24px; font-size:16px; cursor:pointer; background:#2ed573; color:#000; border:none; border-radius:8px;'>🔌 Reconnect to Device</button></p>";
+        html += "</div>";
+        html += "<script>setTimeout(function(){ document.getElementById('reconnect-msg').style.display='block'; }, 15000);</script>";
         html += HTML_FOOTER;
         server->send(200, "text/html", html);
 
         // Reboot after a short delay
-        delay(6000);
+        delay(10000);
         ESP.restart();
     }
 }
@@ -1082,9 +1104,9 @@ void ConfigWebServer::handleDownloadUpdate()
         server->send(200, "application/json", "{\"success\":true,\"message\":\"Rebooting...\"}");
 
         logTimestamp();
-        Serial.println("Update successful, rebooting in 6 seconds...");
+        Serial.println("Update successful, rebooting in 10 seconds...");
 
-        delay(6000);
+        delay(10000);
         ESP.restart();
     }
     else

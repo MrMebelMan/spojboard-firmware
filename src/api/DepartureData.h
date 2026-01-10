@@ -1,17 +1,20 @@
 #ifndef DEPARTUREDATA_H
 #define DEPARTUREDATA_H
 
+#include <time.h>
+
 // ============================================================================
 // Departure Data Structures
 // ============================================================================
 
-#define MAX_DEPARTURES 6
+#define MAX_DEPARTURES 12  // Increased for better caching with filtering
 
 struct Departure
 {
     char line[8];         // Line number (e.g., "31", "A", "S9")
     char destination[32]; // Destination/headsign
-    int eta;              // Minutes until departure
+    int eta;              // Minutes until departure (recalculated from departureTime)
+    time_t departureTime; // Unix timestamp of departure (from API)
     bool hasAC;           // Air conditioning
     bool isDelayed;       // Has delay
     int delayMinutes;     // Delay in minutes
@@ -35,5 +38,12 @@ int compareDepartures(const void* a, const void* b);
  * @param destination UTF-8 string to shorten (will be modified in-place)
  */
 void shortenDestination(char* destination);
+
+/**
+ * Calculate ETA in minutes from departure timestamp
+ * @param departureTime Unix timestamp of departure
+ * @return Minutes until departure (0 if already departed)
+ */
+int calculateETA(time_t departureTime);
 
 #endif // DEPARTUREDATA_H

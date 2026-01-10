@@ -18,4 +18,23 @@ void logTimestamp();
  */
 void logMemory(const char* location);
 
+/**
+ * Initialize logger with config reference
+ * Must be called before using conditional logging functions
+ * @param cfg Pointer to config structure
+ */
+void initLogger(const struct Config* cfg);
+
+/**
+ * Print message to Serial and telnet (if debug enabled)
+ * @param message Message to print
+ */
+void debugPrint(const char* message);
+
+/**
+ * Print message with newline to Serial and telnet (if debug enabled)
+ * @param message Message to print
+ */
+void debugPrintln(const char* message);
+
 #endif // LOGGER_H

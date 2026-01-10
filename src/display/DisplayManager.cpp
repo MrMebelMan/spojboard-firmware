@@ -104,7 +104,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     display->setTextColor(COLOR_WHITE);
 
     int destLen = strlen(dep.destination);
-    int normalMaxChars = dep.hasAC ? 15 : 16;
+    int normalMaxChars = dep.hasAC ? 14 : 15;
     const GFXfont* destFont;
     int maxChars;
     bool useCondensed = false;
@@ -128,7 +128,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     // Condensed font needs more reduction due to narrower characters
     if (useCondensed)
     {
-        maxChars -= (dep.eta >= 100 ? 3 : (dep.eta >= 10 ? 2 : 0));
+        maxChars -= (dep.eta >= 100 ? 3 : (dep.eta >= 10 ? 2 : 1));
     }
     else
     {
@@ -150,7 +150,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     {
         etaCursor = 105;
     }
-    else if (dep.eta >= 10)
+    else if (dep.eta >= 10 || dep.eta < 1)
     {
         etaCursor = 111;
     }
@@ -215,8 +215,8 @@ void DisplayManager::drawDateTime()
     display->setTextColor(COLOR_WHITE);
 
     // Day of week
-    char dayStr[5];
-    strftime(dayStr, 5, "%a|", &timeinfo);
+    char dayStr[6];
+    strftime(dayStr, 6, "%a|", &timeinfo);
     utf8tocp(dayStr); // Convert Czech day names
     display->setCursor(2, y + 7);
     display->print(dayStr);

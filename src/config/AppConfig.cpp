@@ -11,15 +11,17 @@ void loadConfig(Config& config)
     strlcpy(config.wifiPassword, preferences.getString("wifiPass", DEFAULT_WIFI_PASSWORD).c_str(), sizeof(config.wifiPassword));
     strlcpy(config.apiKey, preferences.getString("apiKey", "").c_str(), sizeof(config.apiKey));
     strlcpy(config.stopIds, preferences.getString("stopIds", "U693Z2P").c_str(), sizeof(config.stopIds));
-    config.refreshInterval = preferences.getInt("refresh", 30);
-    config.numDepartures = preferences.getInt("numDeps", 3);
+    config.refreshInterval = preferences.getInt("refresh", 60);  // Increased to 60s to reduce API load
+    config.numDepartures = preferences.getInt("numDeps", 8);     // Increased to 8 for better caching
     config.minDepartureTime = preferences.getInt("minDepTime", 3);
     config.brightness = preferences.getInt("brightness", 90);
     strlcpy(config.lineColorMap, preferences.getString("lineColorMap", "").c_str(), sizeof(config.lineColorMap));
+    config.debugMode = preferences.getBool("debugMode", false);  // Default: disabled
     config.configured = preferences.getBool("configured", false);
 
     preferences.end();
 
+    // Config loading happens before logger init, so use Serial directly
     logTimestamp();
     Serial.println("Config loaded:");
     Serial.print("  SSID: ");
@@ -47,12 +49,13 @@ void saveConfig(const Config& config)
     preferences.putInt("minDepTime", config.minDepartureTime);
     preferences.putInt("brightness", config.brightness);
     preferences.putString("lineColorMap", config.lineColorMap);
+    preferences.putBool("debugMode", config.debugMode);
     preferences.putBool("configured", true);
 
     preferences.end();
 
     logTimestamp();
-    Serial.println("Config saved");
+    debugPrintln("Config saved");
 }
 
 void clearConfig()
@@ -66,5 +69,5 @@ void clearConfig()
     preferences.end();
 
     logTimestamp();
-    Serial.println("All configuration cleared - device will boot into AP mode on restart");
+    debugPrintln("All configuration cleared - device will boot into AP mode on restart");
 }

@@ -65,6 +65,7 @@ struct Config
     int minDepartureTime;   // Minimum departure time in minutes (filter out departures < this)
     int brightness;         // Display brightness (0-255)
     char lineColorMap[256]; // Line color mappings (format: "A=GREEN,B=YELLOW,9*=CYAN")
+    bool debugMode;         // Enable telnet logging and verbose output
     bool configured;
 };
 

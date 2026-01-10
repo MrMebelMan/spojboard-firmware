@@ -12,9 +12,10 @@ WiFiManager::WiFiManager()
 
 bool WiFiManager::connectSTA(const Config& config, int maxAttempts, int delayMs)
 {
+    char msg[96];
+    snprintf(msg, sizeof(msg), "WiFi: Connecting to %s", config.wifiSsid);
     logTimestamp();
-    Serial.print("WiFi: Connecting to ");
-    Serial.println(config.wifiSsid);
+    debugPrintln(msg);
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(config.wifiSsid, config.wifiPassword);
@@ -23,22 +24,21 @@ bool WiFiManager::connectSTA(const Config& config, int maxAttempts, int delayMs)
     while (WiFi.status() != WL_CONNECTED && attempts < maxAttempts)
     {
         delay(delayMs);
-        Serial.print(".");
+        debugPrint(".");
         attempts++;
     }
 
     if (WiFi.status() == WL_CONNECTED)
     {
+        snprintf(msg, sizeof(msg), "\nWiFi: Connected! IP: %s", WiFi.localIP().toString().c_str());
         logTimestamp();
-        Serial.println("\nWiFi: Connected!");
-        Serial.print("IP: ");
-        Serial.println(WiFi.localIP());
+        debugPrintln(msg);
         return true;
     }
     else
     {
         logTimestamp();
-        Serial.println("\nWiFi: Connection failed!");
+        debugPrintln("\nWiFi: Connection failed!");
         return false;
     }
 }
@@ -46,7 +46,7 @@ bool WiFiManager::connectSTA(const Config& config, int maxAttempts, int delayMs)
 bool WiFiManager::startAP()
 {
     logTimestamp();
-    Serial.println("Starting AP Mode...");
+    debugPrintln("Starting AP Mode...");
 
     // Generate credentials
     generateAPName();
@@ -61,7 +61,7 @@ bool WiFiManager::startAP()
     if (!WiFi.softAP(apSSID, apPassword))
     {
         logTimestamp();
-        Serial.println("AP Mode failed to start!");
+        debugPrintln("AP Mode failed to start!");
         return false;
     }
 
@@ -73,14 +73,15 @@ bool WiFiManager::startAP()
 
     apModeActive = true;
 
+    char msg[128];
     logTimestamp();
-    Serial.println("AP Mode Active!");
-    Serial.print("  SSID: ");
-    Serial.println(apSSID);
-    Serial.print("  Password: ");
-    Serial.println(apPassword);
-    Serial.print("  IP: ");
-    Serial.println(WiFi.softAPIP());
+    debugPrintln("AP Mode Active!");
+    snprintf(msg, sizeof(msg), "  SSID: %s", apSSID);
+    debugPrintln(msg);
+    snprintf(msg, sizeof(msg), "  Password: %s", apPassword);
+    debugPrintln(msg);
+    snprintf(msg, sizeof(msg), "  IP: %s", WiFi.softAPIP().toString().c_str());
+    debugPrintln(msg);
 
     return true;
 }
@@ -90,7 +91,7 @@ void WiFiManager::stopAP()
     if (apModeActive)
     {
         logTimestamp();
-        Serial.println("Stopping AP Mode...");
+        debugPrintln("Stopping AP Mode...");
 
         WiFi.softAPdisconnect(true);
         apModeActive = false;
@@ -119,7 +120,7 @@ void WiFiManager::attemptReconnect()
     if (!apModeActive && WiFi.status() != WL_CONNECTED)
     {
         logTimestamp();
-        Serial.println("WiFi: Attempting reconnection...");
+        debugPrintln("WiFi: Attempting reconnection...");
         WiFi.reconnect();
     }
 }

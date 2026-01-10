@@ -50,3 +50,15 @@ int compareDepartures(const void *a, const void *b)
     Departure *depB = (Departure *)b;
     return depA->eta - depB->eta; // Sort by ETA ascending
 }
+
+// ============================================================================
+// ETA Calculation Helper
+// ============================================================================
+
+int calculateETA(time_t departureTime)
+{
+    time_t now;
+    time(&now);
+    int diffSec = difftime(departureTime, now);
+    return (diffSec > 0) ? (diffSec / 60) : 0;
+}

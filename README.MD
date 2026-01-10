@@ -12,7 +12,9 @@ No external server required - standalone operation with web-based configuration!
 
 ## Features
 
-- **Direct API Access**: Fetches departure data from Golemio PID API every 30 seconds (configurable)
+- **Direct API Access**: Fetches departure data from Golemio PID API every 30-300 seconds (configurable)
+- **Smart ETA Updates**: Recalculates ETAs every 10 seconds from cached timestamps without additional API calls - reduces server load while keeping display fresh
+- **Extended Buffer**: Caches up to 12 departures (configurable 1-12), perfect for longer refresh intervals during peak times
 - **Multi-Stop Support**: Query multiple stops simultaneously, automatically sorted by departure time
 - **WiFi Setup Portal**: Automatic AP mode with captive portal when WiFi fails - no code editing needed!
 - **Web Configuration**: Easy setup via built-in web interface
@@ -26,6 +28,7 @@ No external server required - standalone operation with web-based configuration!
 - **Color-coded Lines**: Colored line numbers on black backgrounds for high contrast and readability
 - **Custom Line Colors**: Configure custom colors for specific lines via web interface (supports pattern matching with wildcards)
 - **Firmware Updates**: GitHub-based OTA updates with user confirmation - check for new releases directly from the web interface
+- **Optional Telnet Logging**: Remote debugging via telnet (port 23) when debug mode is enabled - mirrors all logs over WiFi
 
 ## Hardware
 
@@ -34,6 +37,7 @@ No external server required - standalone operation with web-based configuration!
 - **Controller**: Adafruit MatrixPortal ESP32-S3
 - **Display**: 2× HUB75 64×32 LED Matrix panels (128×32 total resolution)
 - **Power Supply**: Minimum 5V 3A switching power supply
+  - Can also be powered by a 5V 3A USB-C charger: wire the power cables from the displays to MatrixPortal's 5V/GND terminals and power through its USB-C port.
 
 ### Alternative: Generic ESP32-S3
 
@@ -107,10 +111,11 @@ The built-in web server provides:
   - Golemio API key
   - Stop ID(s) - comma-separated for multiple stops
   - Refresh interval (10-300 seconds)
-  - Number of departures to display (1-6)
+  - Number of departures to cache (1-12)
   - Minimum departure time (0-30 minutes) - filter out departures too soon to catch
   - Display brightness (0-255)
   - Custom line colors with pattern matching (e.g., "9*/9**" for all night lines)
+  - Debug mode (enables telnet logging on port 23)
 - **Actions**:
   - Force refresh
   - Update firmware (manual .bin upload)
@@ -123,13 +128,14 @@ The built-in web server provides:
 | Feature | AP Mode | Normal Mode |
 |---------|---------|-------------|
 | WiFi | Creates its own network | Connects to your network |
-| API Calls | Disabled | Every 30s (configurable) |
+| API Calls | Disabled | Every 30-300s (configurable) |
+| ETA Updates | N/A | Every 10s from cache |
 | Display | Shows AP credentials | Shows departures |
 | Web UI | Setup focused | Full dashboard |
 
 ## Getting Your Stop ID
 
-1. Visit [data.pid.cz/stops/xml/StopsByName.xml](http://data.pid.cz/stops/xml/StopsByName.xml)
+1. Visit [data.pid.cz/stops/json/stops.json](https://data.pid.cz/stops/json/stops.json)
 2. Search for your stop name (Ctrl+F)
 3. Find the `gtfsIds` value (e.g., `U693Z2P`)
 4. You can enter multiple IDs separated by commas
@@ -356,12 +362,14 @@ The device implements captive portal detection for:
 ### Multi-Stop Behavior
 When multiple stop IDs are configured (comma-separated), the system:
 1. Queries each stop individually via separate API calls (with 1-second delay between calls to reduce server load)
-2. Collects all departures (up to 30 total)
+2. Collects all departures (up to 48 total from temporary buffer)
 3. Sorts by ETA (earliest departures first)
 4. Applies minimum departure time filter
-5. Displays the top N results (configurable 1-6)
+5. Caches the top 12 results with departure timestamps for ETA recalculation
+6. Displays the top 3 of the configured number of departures (1-12)
+7. Recalculates ETAs every 10 seconds from cached timestamps, filtering out stale departures
 
-This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from. The 1-second delay between API calls helps avoid rate limiting and reduces load on the Golemio API servers.
+This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from. The 1-second delay between API calls helps avoid rate limiting and reduces load on the Golemio API servers. The 10-second ETA recalculation keeps the display fresh without additional API calls, allowing longer refresh intervals (up to 300s) during peak times.
 
 ### Destination String Shortening
 To maximize display space on the 128×32 LED matrix, long Czech destination names are automatically shortened before display:
