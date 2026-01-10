@@ -3,8 +3,7 @@
 An ESP32-based LED matrix display showing real-time transit departures from Prague's Golemio API.
 
 **SPOJ** = **S**mart **P**anel for **O**nward **J**ourneys (also "spoj" = connection/service in Czech)
-
-No external server required - standalone operation with web-based configuration!
+Standalone operation with web-based configuration, no external server required.
 
 ![SpojBoard Device](docs/images/spojboard-device.jpg)
 
@@ -15,23 +14,22 @@ No external server required - standalone operation with web-based configuration!
 - **[Architecture & Data Flow](docs/ARCHITECTURE.md)** - Technical details, pipeline flow, and design rationale
 - **[Font System](docs/FONTS.md)** - Czech character support and custom font creation guide
 - **[Hardware Guide for Generic ESP32-S3](docs/GENERIC_ESP32S3.md)** - Alternative hardware setup
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## Features
 
 - **Direct API Access**: Fetches departure data from Golemio PID API every 10-300 seconds (configurable)
-- **Smart ETA Updates**: Recalculates ETAs every 10 seconds from cached timestamps without additional API calls - reduces server load while keeping display fresh
-- **Extended Buffer**: Always fetches and caches 12 departures per stop for optimal sorting and filtering
+- **Local ETA Updates**: Recalculates ETAs every 10 seconds from cached timestamps without additional API calls - reduces server load while keeping display fresh
+- **Extended Buffer**: Always fetches and caches 12 departures per stop for better sorting and filtering
 - **Multi-Stop Support**: Query up to 12 stops simultaneously (144 departure buffer), automatically sorted by departure time with 1s rate limiting
 - **WiFi Setup Portal**: Automatic AP mode with captive portal when WiFi fails - no code editing needed!
 - **Web Configuration**: Easy setup via built-in web interface
 - **Persistent Settings**: Configuration stored in ESP32 flash memory, survives reboots
-- **Full Czech Character Support**: Custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion for perfect display of Czech station names (ž, š, č, ř, ň, ť, ď, etc.)
+- **Czech Character Support**: Custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion for Czech station names (ž, š, č, ř, ň, ť, ď, etc.)
 - **Adaptive Font Rendering**: Automatically switches to condensed font for long destination names (>16 chars), fitting up to 23 characters on screen
-- **Smart Text Shortening**: Automatic shortening of long Czech words (e.g., "Nádraží" → "Nádr.", "nádraží" → "nádr.") to maximize display space
-- **Smart Filtering**: Configurable minimum departure time (default 3 minutes) to hide departures that are too soon to catch
-- **Real-time Updates**: Shows line number, destination, and ETA in minutes
+- **Headsign Shortening**: Automatic shortening of long Czech words (e.g., "Nádraží" → "Nádr.", "nádraží" → "nádr.") to maximize display space
+- **Trip Filtering**: Configurable minimum departure time (default 3 minutes) to hide departures that are too soon to catch
 - **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles
-- **Color-coded Lines**: Colored line numbers on black backgrounds for high contrast and readability
 - **Custom Line Colors**: Configure custom colors for specific lines via web interface (supports pattern matching with wildcards)
 - **Demo Mode**: Preview custom departure data on the display before API configuration - available in both setup and normal modes
 - **Firmware Updates**: GitHub-based OTA updates with user confirmation - check for new releases directly from the web interface
@@ -107,8 +105,6 @@ If the device can't connect to WiFi (wrong password, network down, etc.), it wil
 3. Display the credentials on the LED matrix
 4. Wait for you to configure new WiFi settings
 
-This ensures you can always access the device for reconfiguration!
-
 ## Web Interface
 
 The built-in web server provides:
@@ -168,7 +164,6 @@ The built-in web server provides:
 - All destinations start at the same X position regardless of route length
 - Adaptive font rendering: automatically switches to condensed font for destinations longer than 16 characters
 - Destination text dynamically truncated based on ETA display width and font choice to prevent overlap
-- High contrast design optimized for LED matrix visibility
 
 ### AP Setup Mode
 ```
@@ -190,7 +185,7 @@ These colors are used by default and can be customized via the web interface:
 - **Yellow**: Metro B, Default fallback for all unmapped lines
 - **Red**: Metro C
 - **White**: Trams 1-29 (e.g., 2, 5, 7, 10, 12, 15, 17, 22)
-- **Purple**: 3-digit trams 100-299 (e.g., 100, 102, 200)
+- **Purple**: 2-digit T-buses 50-59 & 3-digit buses 100-299 (e.g., 59, 100, 102, 200)
 - **Blue**: S-trains (S1, S2, S3, etc.)
 - **Cyan**: Night lines 91-99, 900-999
 
@@ -209,30 +204,7 @@ These colors are used by default and can be customized via the web interface:
 
 ## Troubleshooting
 
-### Can't Connect to AP
-- Make sure you're connecting to the right network (SpojBoard-XXXX)
-- The password is case-sensitive and shown on the display
-- Try forgetting the network and reconnecting
-
-### "API Error: HTTP 401"
-- Invalid API key - check your key at api.golemio.cz
-
-### "API Error: HTTP 429"
-- Rate limited - increase refresh interval
-
-### "No Departures"
-- Check stop ID is correct
-- Some stops may have no service at certain times
-- Try the demo mode to verify display is working correctly
-
-### Device Keeps Going to AP Mode
-- Double-check your WiFi password
-- Make sure your WiFi is 2.4GHz (ESP32-S3 doesn't support 5GHz)
-- Check if your router is blocking new devices
-
-### Display Issues
-- Check HUB75 cable connections
-- Verify panel chain order
+Having issues? See the **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** for solutions to common problems including WiFi connection issues, API errors, display problems, and firmware update issues.
 
 ## Firmware Updates
 
@@ -284,70 +256,7 @@ All firmware updates (both methods):
 - ✅ **Separate OTA partition** (failed update doesn't affect running firmware)
 - ✅ **User confirmation required** (no automatic updates)
 
-### Troubleshooting Updates
 
-**"Updates not available in AP mode"**
-- Connect device to your WiFi network first
-- AP mode blocks updates for security
-
-**"No update available"**
-- Your device is already running the latest version
-- Check [GitHub Releases](https://github.com/xbach/spojboard-firmware/releases) to verify
-
-**"Download failed" or "Installation failed"**
-- Check internet connection
-- Try again - download may have been interrupted
-- Verify you have enough space (firmware ~1-2 MB)
-
-**"GitHub API error" or "Rate limit exceeded"**
-- GitHub limits: 60 requests per hour for unauthenticated users
-- Wait an hour and try again
-- This is normal and not a device issue
-
-## Architecture
-
-The codebase follows a modular, layered architecture with zero circular dependencies:
-
-```
-src/
-├── main.cpp                          # Application orchestration (340 lines)
-├── config/
-│   ├── AppConfig.h/cpp              # Configuration structure & NVS persistence
-├── display/
-│   ├── DisplayManager.h/cpp         # Display rendering & layout
-│   ├── DisplayColors.h/cpp          # Color system & line color mapping
-├── api/
-│   ├── GolemioAPI.h/cpp             # API client for Golemio
-│   ├── DepartureData.h/cpp          # Data structures & utilities
-├── network/
-│   ├── WiFiManager.h/cpp            # WiFi connection & AP mode
-│   ├── CaptivePortal.h/cpp          # DNS server & captive portal
-│   ├── ConfigWebServer.h/cpp        # Web interface handlers
-│   ├── OTAUpdateManager.h/cpp       # OTA firmware upload handling
-│   ├── GitHubOTA.h/cpp              # GitHub releases integration
-└── utils/
-    ├── Logger.h/cpp                 # Logging utilities
-    ├── TimeUtils.h/cpp              # NTP sync & time formatting
-    ├── gfxlatin2.h/cpp              # UTF-8 to ISO-8859-2 conversion
-    └── decodeutf8.h/cpp             # UTF-8 decoder
-```
-
-### Design Principles
-
-**Layered Dependencies** (lower layers never depend on higher layers):
-1. **Foundation Layer**: Logger, UTF-8 utilities
-2. **Data Layer**: AppConfig, DepartureData
-3. **Hardware Layer**: TimeUtils, DisplayColors, DisplayManager
-4. **Network Layer**: CaptivePortal, WiFiManager, ConfigWebServer
-5. **Business Logic**: GolemioAPI
-6. **Application**: main.cpp (orchestrates all modules)
-
-**Key Patterns**:
-- **Zero Circular Dependencies**: Strict unidirectional dependency flow
-- **Single Responsibility**: Each module has one clear purpose
-- **Callback Pattern**: Modules communicate upward via callbacks (e.g., ConfigWebServer → main.cpp)
-- **Pure Data Structures**: Config passed as parameter, not stored in modules
-- **Static Allocation**: No dynamic allocation in main loop for stability
 
 ## Technical Details
 
@@ -382,7 +291,7 @@ When multiple stop IDs are configured (comma-separated, max 12 stops), the syste
 6. Displays the configured number of rows (1-3) on the LED matrix
 7. Recalculates ETAs every 10 seconds from cached timestamps without additional API calls
 
-This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from. The API always fetches 12 departures per stop for optimal caching and sorting - the user only controls how many rows (1-3) to display on the LED matrix. The 10-second ETA recalculation keeps the display fresh without hammering the API, allowing longer refresh intervals (up to 300s) during peak times.
+This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from. The API always fetches 12 departures per stop for caching and sorting - the user only controls how many rows (1-3) to display on the LED matrix. The 10-second ETA recalculation keeps the display fresh without hammering the API, allowing longer refresh intervals (up to 300s) during peak times.
 
 ### Destination String Shortening
 To maximize display space on the 128×32 LED matrix, long Czech destination names are automatically shortened before display:
@@ -395,7 +304,7 @@ Combined with adaptive font rendering (condensed font for destinations >16 chars
 
 ## Fonts & Czech Character Support
 
-SpojBoard uses custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion to perfectly display Czech diacritics (**ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý**) from the Golemio API.
+SpojBoard uses custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion to display Czech diacritics (**ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý**) from the Golemio API.
 
 For complete details on the font system, UTF-8 conversion, and creating custom fonts, see **[Font System Documentation](docs/FONTS.md)**.
 

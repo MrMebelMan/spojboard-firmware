@@ -17,7 +17,7 @@ Technical documentation for developers and contributors.
 - **`MAX_TEMP_DEPARTURES = 144`** ([GolemioAPI.h:51](../src/api/GolemioAPI.h#L51)) - Collection buffer size (12 stops × 12 departures)
 - **`config.numDepartures`** - User setting for display rows (1-3 only)
 
-**Important:** `config.numDepartures` only controls how many rows to show on the LED matrix (1-3), not API fetch size. The API always fetches `MAX_DEPARTURES` (12) per stop for optimal caching and sorting. This simplifies the user experience - average users don't need to understand API response lengths.
+**Important:** `config.numDepartures` only controls how many rows to show on the LED matrix (1-3), not API fetch size. The API always fetches `MAX_DEPARTURES` (12) per stop for better caching and sorting. This simplifies the user experience - users don't need to understand API response lengths.
 
 ## Complete Pipeline Flow
 
