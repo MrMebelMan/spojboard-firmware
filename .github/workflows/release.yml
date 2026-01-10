@@ -40,22 +40,26 @@ jobs:
         echo "FIRMWARE_PATH=$FIRMWARE_FILE" >> $GITHUB_OUTPUT
         echo "FIRMWARE_NAME=$(basename $FIRMWARE_FILE)" >> $GITHUB_OUTPUT
 
+    - name: Extract changelog for this release
+      id: changelog
+      run: |
+        RELEASE_NUM=${{ steps.get_version.outputs.RELEASE_NUM }}
+        # Extract section between [r$RELEASE_NUM] and next [r or end of file
+        CHANGELOG=$(awk "/## \[r${RELEASE_NUM}\]/,/## \[r[0-9]/" CHANGELOG.md | sed '1d;$d')
+        # If empty, use default message
+        if [ -z "$CHANGELOG" ]; then
+          CHANGELOG="See commit history for details."
+        fi
+        # Save to file to preserve formatting
+        echo "$CHANGELOG" > /tmp/release_notes.txt
+        echo "NOTES_FILE=/tmp/release_notes.txt" >> $GITHUB_OUTPUT
+
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: ${{ steps.find_binary.outputs.FIRMWARE_PATH }}
         name: Release ${{ steps.get_version.outputs.RELEASE_NUM }}
-        body: |
-          ## SpojBoard Firmware Release ${{ steps.get_version.outputs.RELEASE_NUM }}
-
-          **Firmware:** `${{ steps.find_binary.outputs.FIRMWARE_NAME }}`
-
-          ### Installation
-          1. Download the `.bin` file below
-          2. Upload via web interface at `http://[device-ip]/ota` or use `pio run -t upload`
-
-          ### Changes
-          See commit history for details.
+        body_path: ${{ steps.changelog.outputs.NOTES_FILE }}
         draft: false
         prerelease: false
       env:
