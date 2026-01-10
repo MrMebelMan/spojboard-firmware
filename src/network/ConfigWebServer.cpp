@@ -67,7 +67,8 @@ ConfigWebServer::ConfigWebServer()
       wifiConnected(false), apModeActive(false),
       apSSID(""), apPassword(""), apClientCount(0),
       apiError(false), apiErrorMsg(""), departureCount(0), stopName(""),
-      onSaveCallback(nullptr), onRefreshCallback(nullptr), onRebootCallback(nullptr)
+      onSaveCallback(nullptr), onRefreshCallback(nullptr), onRebootCallback(nullptr),
+      onDemoStartCallback(nullptr), onDemoStopCallback(nullptr)
 {
     otaManager = new OTAUpdateManager();
     githubOTA = new GitHubOTA();
@@ -121,8 +122,12 @@ bool ConfigWebServer::begin()
                { handleCheckUpdate(); });
     server->on("/download-update", HTTP_POST, [this]()
                { handleDownloadUpdate(); });
-    server->on("/font-test", HTTP_POST, [this]()
-               { handleFontTest(); });
+    server->on("/demo", HTTP_GET, [this]()
+               { handleDemo(); });
+    server->on("/start-demo", HTTP_POST, [this]()
+               { handleStartDemo(); });
+    server->on("/stop-demo", HTTP_POST, [this]()
+               { handleStopDemo(); });
     server->onNotFound([this]()
                        { handleNotFound(); });
 
@@ -161,11 +166,14 @@ void ConfigWebServer::handleClient()
     }
 }
 
-void ConfigWebServer::setCallbacks(ConfigSaveCallback onSave, RefreshCallback onRefresh, RebootCallback onReboot)
+void ConfigWebServer::setCallbacks(ConfigSaveCallback onSave, RefreshCallback onRefresh, RebootCallback onReboot,
+                                  DemoStartCallback onDemoStart, DemoStopCallback onDemoStop)
 {
     onSaveCallback = onSave;
     onRefreshCallback = onRefresh;
     onRebootCallback = onReboot;
+    onDemoStartCallback = onDemoStart;
+    onDemoStopCallback = onDemoStop;
 }
 
 void ConfigWebServer::setDisplayManager(DisplayManager *displayMgr)
@@ -284,8 +292,9 @@ void ConfigWebServer::handleRoot()
     }
 
     html += "<label>Golemio API Key</label>";
-    // API key is required if: in AP mode OR current API key is empty
-    bool apiKeyRequired = apModeActive || strlen(currentConfig->apiKey) == 0;
+    // API key is NOT required in AP mode (first time setup)
+    // API key IS required if not in AP mode AND current API key is empty
+    bool apiKeyRequired = !apModeActive && strlen(currentConfig->apiKey) == 0;
     if (apiKeyRequired)
     {
         html += "<input type='password' name='apikey' placeholder='Enter Golemio API key' required>";
@@ -294,7 +303,14 @@ void ConfigWebServer::handleRoot()
     else
     {
         html += "<input type='password' name='apikey' placeholder='Enter Golemio API key'>";
-        html += "<p class='info'>Leave empty to keep current API key. Get a new key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
+        if (apModeActive)
+        {
+            html += "<p class='info'>Optional: Configure now or later. Get API key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a>. Try the demo first!</p>";
+        }
+        else
+        {
+            html += "<p class='info'>Leave empty to keep current API key. Get a new key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
+        }
     }
 
     html += "<label>Stop ID(s)</label>";
@@ -417,14 +433,14 @@ void ConfigWebServer::handleRoot()
         html += "<form method='POST' action='/refresh' style='display:inline'>";
         html += "<button type='submit'>Refresh Now</button>";
         html += "</form>";
+        html += "<form method='GET' action='/demo' style='display:inline; margin-top:10px'>";
+        html += "<button type='submit' style='background:#9b59b6;'>Display Demo</button>";
+        html += "</form>";
         html += "<form method='GET' action='/update' style='display:inline; margin-top:10px'>";
         html += "<button type='submit'>Install Firmware</button>";
         html += "</form>";
         html += "<form id='checkUpdateForm' onsubmit='checkForUpdate(event); return false;' style='display:inline; margin-top:10px'>";
         html += "<button type='submit' id='checkUpdateBtn'>Check for Updates</button>";
-        html += "</form>";
-        html += "<form method='POST' action='/font-test' style='display:inline; margin-top:10px'>";
-        html += "<button type='submit'>Test Czech Fonts</button>";
         html += "</form>";
         html += "<form method='POST' action='/reboot' style='display:inline; margin-top:10px'>";
         html += "<button type='submit' class='danger'>Reboot Device</button>";
@@ -433,6 +449,17 @@ void ConfigWebServer::handleRoot()
         html += "<button type='submit' class='danger'>Reset All Settings</button>";
         html += "</form>";
         html += "<div id='updateStatus' style='display:none; margin-top:15px;'></div>";
+        html += "</div>";
+    }
+    else
+    {
+        // Demo is available in AP mode
+        html += "<div class='card'>";
+        html += "<h2>Demo</h2>";
+        html += "<p>Try out the display with sample departure data before configuring API access.</p>";
+        html += "<form method='GET' action='/demo' style='display:inline'>";
+        html += "<button type='submit' style='background:#9b59b6;'>View Display Demo</button>";
+        html += "</form>";
         html += "</div>";
     }
 
@@ -1147,13 +1174,228 @@ void ConfigWebServer::handleDownloadUpdate()
     }
 }
 
-void ConfigWebServer::handleFontTest()
+void ConfigWebServer::handleDemo()
 {
-    // Show font test screen on display
+    String html = HTML_HEADER;
+    html += "<h1>🎨 Display Demo</h1>";
+    html += "<p style='text-align:center; color:#888; margin-top:-10px; margin-bottom:20px;'>Preview and customize the LED display</p>";
+
+    // Demo configuration card
+    html += "<div class='card'>";
+    html += "<h2>Sample Departures</h2>";
+    html += "<p class='info'>Edit the sample data below to preview different line colors, destinations, and ETAs on your LED matrix display.</p>";
+
+    // Demo form
+    html += "<form id='demoForm' onsubmit='startDemo(event); return false;'>";
+
+    // Sample departures (3 rows)
+    for (int i = 1; i <= 3; i++)
+    {
+        html += "<div style='border: 1px solid #333; padding: 15px; margin: 10px 0; border-radius: 5px;'>";
+        html += "<h3 style='color: #00d4ff; margin-top: 0;'>Departure " + String(i) + "</h3>";
+        html += "<div class='grid'>";
+
+        html += "<div><label>Line Number</label>";
+        html += "<input type='text' name='line" + String(i) + "' value='" + (i == 1 ? "12" : (i == 2 ? "C" : "S9")) + "' maxlength='7' required></div>";
+
+        html += "<div><label>Destination</label>";
+        html += "<input type='text' name='dest" + String(i) + "' value='" +
+                (i == 1 ? "Štvanice" : (i == 2 ? "Nádr. Holešovice" : "Praha-Eden")) +
+                "' maxlength='31' required></div>";
+
+        html += "<div><label>ETA (minutes)</label>";
+        html += "<input type='number' name='eta" + String(i) + "' value='" + String(i * 2) + "' min='0' max='120' required></div>";
+
+        html += "<div style='margin-top:10px;'><label><input type='checkbox' name='ac" + String(i) + "' " +
+                (i == 1 ? "checked" : "") + "> Air Conditioned</label></div>";
+
+        html += "</div></div>";
+    }
+
+    html += "<button type='submit' style='background:#9b59b6; margin-top:20px;'>▶ Start Demo</button>";
+    html += "</form>";
+    html += "</div>";
+
+    // Status card
+    html += "<div class='card'>";
+    html += "<h2>Demo Status</h2>";
+    html += "<div id='demoStatus'>";
+    html += "<p style='color:#888;'>Demo not running. Click \"Start Demo\" above to preview on the LED display.</p>";
+    html += "</div>";
+    html += "<form method='POST' action='/stop-demo' id='stopDemoForm' style='display:none;'>";
+    html += "<button type='submit' class='danger'>⏹ Stop Demo & Resume Normal Operation</button>";
+    html += "</form>";
+    html += "</div>";
+
+    // Info card
+    html += "<div class='card' style='background: #2e3b4e;'>";
+    html += "<h3 style='color: #00d4ff; margin-top: 0;'>ℹ️ About Demo Mode</h3>";
+    html += "<ul style='margin: 10px 0; padding-left: 20px; line-height: 1.6;'>";
+    html += "<li>Demo mode displays your custom sample data on the LED matrix</li>";
+    html += "<li>While demo is running, API polling and automatic time updates are paused</li>";
+    html += "<li>You can click \"Start Demo\" repeatedly to test different configurations</li>";
+    html += "<li>Stop demo mode or reboot device to resume normal operation</li>";
+    html += "<li>Demo is available in both AP mode (setup) and STA mode (connected)</li>";
+    html += "</ul>";
+    html += "</div>";
+
+    html += "<p><a href='/'>← Back to Dashboard</a></p>";
+
+    // JavaScript for demo control
+    html += R"rawliteral(
+<script>
+async function startDemo(event) {
+    event.preventDefault();
+    const form = document.getElementById('demoForm');
+    const formData = new FormData(form);
+
+    // Build JSON payload
+    const departures = [];
+    for (let i = 1; i <= 3; i++) {
+        departures.push({
+            line: formData.get('line' + i),
+            destination: formData.get('dest' + i),
+            eta: parseInt(formData.get('eta' + i)),
+            hasAC: formData.has('ac' + i)
+        });
+    }
+
+    try {
+        const response = await fetch('/start-demo', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ departures: departures })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('demoStatus').innerHTML = `
+                <div class='status ok'>
+                    ✅ Demo mode active! Check your LED display.
+                    <p style='margin-top:10px; color:#000;'>The display is now showing your sample departure data. API polling and time updates are paused.</p>
+                </div>
+            `;
+            document.getElementById('stopDemoForm').style.display = 'block';
+        } else {
+            document.getElementById('demoStatus').innerHTML = `
+                <div class='status error'>❌ Failed to start demo: ${data.error}</div>
+            `;
+        }
+    } catch (error) {
+        document.getElementById('demoStatus').innerHTML = `
+            <div class='status error'>❌ Error: ${error.message}</div>
+        `;
+    }
+}
+</script>
+)rawliteral";
+
+    html += HTML_FOOTER;
+    server->send(200, "text/html", html);
+}
+
+void ConfigWebServer::handleStartDemo()
+{
+    // Parse JSON request body
+    String body = server->arg("plain");
+
+    // Simple JSON parsing for departures array
+    Departure demoDepartures[3];
+    int demoCount = 0;
+
+    // Extract departure data from JSON (manual parsing for simplicity)
+    for (int i = 0; i < 3; i++)
+    {
+        // Find "line":"<value>" pattern
+        String lineKey = "\"line\":\"";
+        int lineStart = body.indexOf(lineKey, 0);
+        if (lineStart < 0) break;
+        lineStart += lineKey.length();
+        int lineEnd = body.indexOf("\"", lineStart);
+        String lineValue = body.substring(lineStart, lineEnd);
+
+        // Find "destination":"<value>" pattern
+        String destKey = "\"destination\":\"";
+        int destStart = body.indexOf(destKey, lineEnd);
+        if (destStart < 0) break;
+        destStart += destKey.length();
+        int destEnd = body.indexOf("\"", destStart);
+        String destValue = body.substring(destStart, destEnd);
+
+        // Find "eta":<value> pattern
+        String etaKey = "\"eta\":";
+        int etaStart = body.indexOf(etaKey, destEnd);
+        if (etaStart < 0) break;
+        etaStart += etaKey.length();
+        int etaEnd = body.indexOf(",", etaStart);
+        if (etaEnd < 0) etaEnd = body.indexOf("}", etaStart);
+        String etaValue = body.substring(etaStart, etaEnd);
+
+        // Find "hasAC":<value> pattern
+        String acKey = "\"hasAC\":";
+        int acStart = body.indexOf(acKey, etaEnd);
+        bool hasAC = false;
+        if (acStart >= 0)
+        {
+            acStart += acKey.length();
+            int acEnd = body.indexOf(",", acStart);
+            if (acEnd < 0) acEnd = body.indexOf("}", acStart);
+            String acValue = body.substring(acStart, acEnd);
+            hasAC = acValue.indexOf("true") >= 0;
+        }
+
+        // Copy to departure structure
+        strlcpy(demoDepartures[demoCount].line, lineValue.c_str(), sizeof(demoDepartures[demoCount].line));
+        strlcpy(demoDepartures[demoCount].destination, destValue.c_str(), sizeof(demoDepartures[demoCount].destination));
+        demoDepartures[demoCount].eta = etaValue.toInt();
+        demoDepartures[demoCount].hasAC = hasAC;
+        demoDepartures[demoCount].isDelayed = false;
+        demoDepartures[demoCount].delayMinutes = 0;
+        demoDepartures[demoCount].departureTime = 0;  // Not used in demo mode
+
+        demoCount++;
+
+        // Move search position forward for next departure
+        body = body.substring(etaEnd + 1);
+    }
+
+    if (demoCount == 0)
+    {
+        server->send(400, "application/json", "{\"success\":false,\"error\":\"No departure data found\"}");
+        return;
+    }
+
+    // Call callback to activate demo mode
+    if (onDemoStartCallback != nullptr)
+    {
+        onDemoStartCallback(demoDepartures, demoCount);
+    }
+
+    // Show demo on display immediately
     if (displayManager != nullptr)
     {
-        displayManager->drawFontTest();
+        displayManager->drawDemo(demoDepartures, demoCount, "Demo Mode");
     }
+
+    logTimestamp();
+    Serial.print("Demo mode started with ");
+    Serial.print(demoCount);
+    Serial.println(" departures");
+
+    server->send(200, "application/json", "{\"success\":true,\"message\":\"Demo mode activated\"}");
+}
+
+void ConfigWebServer::handleStopDemo()
+{
+    // Call callback to deactivate demo mode
+    if (onDemoStopCallback != nullptr)
+    {
+        onDemoStopCallback();
+    }
+
+    logTimestamp();
+    Serial.println("Demo mode stopped");
 
     server->sendHeader("Location", "/");
     server->send(302, "text/plain", "");

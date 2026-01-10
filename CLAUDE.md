@@ -17,6 +17,7 @@ ESP32-based transit departure display that fetches real-time data from Prague's 
 - Custom 8-bit ISO-8859-2 GFXfonts with full Czech character support
 - UTF-8 to ISO-8859-2 automatic conversion for API data
 - Configurable minimum departure time filter
+- Demo mode with customizable sample departures
 - Web-based configuration interface
 - GitHub-based OTA firmware updates with user confirmation
 
@@ -99,19 +100,22 @@ src/
 
 ### State Machine
 
-The device operates in two modes:
-- **AP Mode** (`apModeActive=true`): Creates WiFi network for setup, DNS captive portal active, display shows credentials
-- **STA Mode** (`apModeActive=false`): Connects to configured WiFi, fetches departures every 30s (configurable), serves web UI
+The device operates in two modes with an optional demo state:
+- **AP Mode** (`apModeActive=true`): Creates WiFi network for setup, DNS captive portal active, display shows credentials, demo available
+- **STA Mode** (`apModeActive=false`): Connects to configured WiFi, fetches departures every 30s (configurable), serves web UI, demo available
+- **Demo Mode** (`demoModeActive=true`): Pauses API polling and automatic display updates, shows custom sample departures
 
 Transitions:
 - Boot → Try STA mode → If fail (20 attempts/~10s) → AP mode
 - AP mode + config save → Restart → Try STA mode
 - STA mode connection loss → Auto-reconnect attempts every 30s
+- Demo start → Set demoModeActive=true, stop API polling
+- Demo stop → Set demoModeActive=false, resume normal operation
 
 ### Display Rendering System
 
 - **Row-based layout**: 4 rows × 8 pixels each on 128×32 matrix
-  - Rows 0-2: Departure entries (line number, destination, ETA)
+  - Rows 0-2: Departure entries (line number, destination, ETA) - shared by normal and demo modes
   - Row 3: Date/time status bar with pipe separator (e.g., "Mon| Feb 15 14:35")
 - **Uniform route boxes**: All line numbers displayed in 18-pixel wide black background boxes (fits 1-3 characters)
   - Route numbers horizontally centered within boxes using `getTextBounds()` with proper x1 offset compensation
@@ -207,6 +211,9 @@ Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to pres
 - `POST /save` - Save configuration (triggers restart if WiFi changed)
 - `POST /refresh` - Force immediate API call
 - `POST /reboot` - Device restart
+- `GET /demo` - Demo configuration page with editable sample departures
+- `POST /start-demo` - Start demo mode with custom departure data (JSON)
+- `POST /stop-demo` - Stop demo mode and resume normal operation
 - `GET /update` - OTA firmware upload form (manual upload)
 - `POST /update` - Handle firmware file upload (split into two handlers):
   - Upload chunk handler: `handleUpdateProgress()` - processes chunks without HTTP response
@@ -233,6 +240,8 @@ NVS namespace: "transport"
 - `configured` (Bool)
 
 Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, 30s refresh, 3 departures, 3min minimum departure time, brightness 90, empty lineColorMap (uses hardcoded defaults)
+
+**First-time setup (AP Mode)**: Only WiFi credentials required, API key and stop IDs optional. Demo mode available before API configuration.
 
 ## Time Handling
 

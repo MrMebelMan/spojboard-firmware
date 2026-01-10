@@ -1,6 +1,5 @@
 #include "GolemioAPI.h"
 #include "../utils/Logger.h"
-#include "../utils/gfxlatin2.h"
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <time.h>
@@ -217,7 +216,7 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
             if (name)
             {
                 strlcpy(stopName, name, 64);
-                utf8tocp(stopName);
+                // Note: UTF-8 to ISO-8859-2 conversion now handled by DisplayManager
             }
             isFirstStop = false;
         }
@@ -270,7 +269,7 @@ void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartu
     {
         strlcpy(tempDepartures[tempCount].destination, headsign, sizeof(tempDepartures[0].destination));
         shortenDestination(tempDepartures[tempCount].destination); // Shorten while still UTF-8
-        utf8tocp(tempDepartures[tempCount].destination);           // Then convert to ISO-8859-2
+        // Note: UTF-8 to ISO-8859-2 conversion now handled by DisplayManager
     }
     else
     {

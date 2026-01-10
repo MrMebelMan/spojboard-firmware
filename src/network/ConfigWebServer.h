@@ -25,6 +25,8 @@ public:
     typedef void (*ConfigSaveCallback)(const Config& newConfig, bool wifiChanged);
     typedef void (*RefreshCallback)();
     typedef void (*RebootCallback)();
+    typedef void (*DemoStartCallback)(const Departure* demoDepartures, int demoCount);
+    typedef void (*DemoStopCallback)();
 
     ConfigWebServer();
     ~ConfigWebServer();
@@ -48,7 +50,8 @@ public:
     /**
      * Set callback functions for configuration events
      */
-    void setCallbacks(ConfigSaveCallback onSave, RefreshCallback onRefresh, RebootCallback onReboot);
+    void setCallbacks(ConfigSaveCallback onSave, RefreshCallback onRefresh, RebootCallback onReboot,
+                     DemoStartCallback onDemoStart = nullptr, DemoStopCallback onDemoStop = nullptr);
 
     /**
      * Set display manager for OTA progress updates
@@ -102,6 +105,8 @@ private:
     ConfigSaveCallback onSaveCallback;
     RefreshCallback onRefreshCallback;
     RebootCallback onRebootCallback;
+    DemoStartCallback onDemoStartCallback;
+    DemoStopCallback onDemoStopCallback;
 
     // HTTP handlers
     void handleRoot();
@@ -114,7 +119,9 @@ private:
     void handleUpdateComplete();   // POST: handle firmware upload completion
     void handleCheckUpdate();      // GET: check GitHub for updates (AJAX)
     void handleDownloadUpdate();   // POST: download and install from GitHub (AJAX)
-    void handleFontTest();         // POST: display font test screen
+    void handleDemo();             // GET: show demo configuration page
+    void handleStartDemo();        // POST: start demo mode with sample data
+    void handleStopDemo();         // POST: stop demo mode and resume normal operation
     void handleNotFound();
 
     // OTA progress callbacks (static for use as function pointers)

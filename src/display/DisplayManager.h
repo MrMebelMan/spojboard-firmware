@@ -81,9 +81,13 @@ public:
     MatrixPanel_I2S_DMA* getDisplay() { return display; }
 
     /**
-     * Draw font test screen with Czech special characters
+     * Draw demo mode display (repurposed from drawFontTest)
+     * Shows sample departure data for customization testing
+     * @param departures Array of sample departures to display
+     * @param departureCount Number of departures (1-3)
+     * @param stopName Stop name to display
      */
-    void drawFontTest();
+    void drawDemo(const Departure* departures, int departureCount, const char* stopName);
 
 private:
     MatrixPanel_I2S_DMA* display;

@@ -45,6 +45,7 @@ bool needsDisplayUpdate = false;
 bool apiError = false;
 char apiErrorMsg[64] = "";
 char stopName[64] = "";
+bool demoModeActive = false;  // Demo mode flag - stops API polling and display updates
 
 // Network layer is now in network/ modules:
 // - WiFiManager: WiFi connection and AP mode
@@ -169,6 +170,35 @@ void onReboot()
     ESP.restart();
 }
 
+void onDemoStart(const Departure* demoDepartures, int demoCount)
+{
+    // Enter demo mode: stop API polling and display updates
+    demoModeActive = true;
+
+    // Copy demo departures to global state
+    departureCount = (demoCount > MAX_DEPARTURES) ? MAX_DEPARTURES : demoCount;
+    for (int i = 0; i < departureCount; i++)
+    {
+        departures[i] = demoDepartures[i];
+    }
+
+    // Trigger display update with demo data
+    needsDisplayUpdate = true;
+
+    logTimestamp();
+    debugPrintln("Demo mode activated - API polling stopped");
+}
+
+void onDemoStop()
+{
+    // Exit demo mode: resume normal operation
+    demoModeActive = false;
+    lastApiCall = 0;  // Force immediate API refresh
+
+    logTimestamp();
+    debugPrintln("Demo mode deactivated - resuming normal operation");
+}
+
 // ============================================================================
 // Setup
 // ============================================================================
@@ -243,7 +273,7 @@ void setup()
     }
 
     // Initialize web server with callbacks
-    webServer.setCallbacks(onConfigSave, onRefresh, onReboot);
+    webServer.setCallbacks(onConfigSave, onRefresh, onReboot, onDemoStart, onDemoStop);
     webServer.setDisplayManager(&displayManager); // For OTA progress updates
     if (!webServer.begin())
     {
@@ -365,27 +395,31 @@ void loop()
     }
     wasConnected = isConnected;
 
-    // Periodic API calls (only when connected and not in AP mode)
-    if (wifiManager.isConnected() && config.configured && strlen(config.apiKey) > 0)
+    // Skip API polling and ETA recalculation in demo mode
+    if (!demoModeActive)
     {
-        unsigned long now = millis();
-        unsigned long interval = (unsigned long)config.refreshInterval * 1000;
-
-        if (now - lastApiCall >= interval || lastApiCall == 0)
+        // Periodic API calls (only when connected and not in AP mode)
+        if (wifiManager.isConnected() && config.configured && strlen(config.apiKey) > 0)
         {
-            lastApiCall = now;
-            fetchDepartures();
+            unsigned long now = millis();
+            unsigned long interval = (unsigned long)config.refreshInterval * 1000;
+
+            if (now - lastApiCall >= interval || lastApiCall == 0)
+            {
+                lastApiCall = now;
+                fetchDepartures();
+            }
         }
-    }
 
-    // Real-time ETA recalculation every 10 seconds (only when connected and have departures)
-    if (wifiManager.isConnected() && departureCount > 0)
-    {
-        unsigned long now = millis();
-        if (now - lastEtaRecalc >= 10000 || lastEtaRecalc == 0)
+        // Real-time ETA recalculation every 10 seconds (only when connected and have departures)
+        if (wifiManager.isConnected() && departureCount > 0)
         {
-            lastEtaRecalc = now;
-            recalculateETAs();
+            unsigned long now = millis();
+            if (now - lastEtaRecalc >= 10000 || lastEtaRecalc == 0)
+            {
+                lastEtaRecalc = now;
+                recalculateETAs();
+            }
         }
     }
 

@@ -162,6 +162,13 @@ The device operates in two modes:
 - Fetches departures every N seconds (configurable)
 - ETA recalculation every 10 seconds
 - Serves full web dashboard
+- Demo mode available
+
+### Demo Mode (`demoModeActive=true`)
+- Pauses API polling and automatic display updates
+- Shows user-configurable sample departures
+- Available in both AP and STA modes
+- Manually stopped via web interface or device reboot
 
 ### State Transitions
 
@@ -251,7 +258,13 @@ GolemioAPI
 DisplayManager
   ├─ Renders to LED matrix
   ├─ Receives data as parameters (no caching)
+  ├─ Handles UTF-8 to ISO-8859-2 conversion at render time
   └─ Accesses config pointer for color mapping
+
+ConfigWebServer
+  ├─ Serves web interface
+  ├─ Handles demo mode via callbacks
+  └─ Communicates with main.cpp via callback pattern
 ```
 
 ## Multi-Stop Behavior

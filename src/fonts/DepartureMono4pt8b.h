@@ -53,7 +53,7 @@ const uint8_t DepartureMono_Regular4pt8bBitmaps[] PROGMEM = {
 };
 
 const GFXglyph DepartureMono_Regular4pt8bGlyphs[] PROGMEM = {
-  {     0,   1,   1,   5,    0,    0 },   // 0x20 ' '
+  {     0,   1,   1,   4,    0,    0 },   // 0x20 ' '
   {     1,   1,   5,   5,    2,   -4 },   // 0x21 '!'
   {     3,   2,   2,   5,    1,   -4 },   // 0x22 '"'
   {     4,   6,   5,   5,    0,   -4 },   // 0x23 '#'

@@ -33,6 +33,7 @@ No external server required - standalone operation with web-based configuration!
 - **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles
 - **Color-coded Lines**: Colored line numbers on black backgrounds for high contrast and readability
 - **Custom Line Colors**: Configure custom colors for specific lines via web interface (supports pattern matching with wildcards)
+- **Demo Mode**: Preview custom departure data on the display before API configuration - available in both setup and normal modes
 - **Firmware Updates**: GitHub-based OTA updates with user confirmation - check for new releases directly from the web interface
 - **Optional Telnet Logging**: Remote debugging via telnet (port 23) when debug mode is enabled - mirrors all logs over WiFi
 
@@ -87,9 +88,10 @@ HUB75 LED matrix panels require external 5V power.
    - A captive portal should open automatically (or go to http://192.168.4.1)
 
 3. **Configure via Web UI**
-   - Enter your home WiFi credentials
-   - Enter your Golemio API key (get one at [api.golemio.cz/api-keys](https://api.golemio.cz/api-keys/))
-   - Enter your stop ID(s)
+   - Enter your home WiFi credentials (required)
+   - Optionally enter your Golemio API key (get one at [api.golemio.cz/api-keys](https://api.golemio.cz/api-keys/))
+   - Optionally enter your stop ID(s)
+   - Try the demo mode to preview the display before API setup
    - Click "Save & Connect to WiFi"
 
 4. **Device Connects**
@@ -124,6 +126,7 @@ The built-in web server provides:
   - Debug mode (enables telnet logging on port 23)
 - **Actions**:
   - Force refresh
+  - Display demo (preview custom departures)
   - Update firmware (manual .bin upload)
   - Check for updates (GitHub releases)
   - Reboot device
@@ -138,6 +141,7 @@ The built-in web server provides:
 | ETA Updates | N/A | Every 10s from cache |
 | Display | Shows AP credentials | Shows departures |
 | Web UI | Setup focused | Full dashboard |
+| Demo Mode | Available | Available |
 
 ## Getting Your Stop ID
 
@@ -219,6 +223,7 @@ These colors are used by default and can be customized via the web interface:
 ### "No Departures"
 - Check stop ID is correct
 - Some stops may have no service at certain times
+- Try the demo mode to verify display is working correctly
 
 ### Device Keeps Going to AP Mode
 - Double-check your WiFi password

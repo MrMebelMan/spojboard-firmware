@@ -71,6 +71,14 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
 {
     int y = row * 8; // Each row is 8 pixels
 
+    // Convert line number and destination to ISO-8859-2 (in-place)
+    char lineConverted[8];
+    char destConverted[32];
+    strlcpy(lineConverted, dep.line, sizeof(lineConverted));
+    strlcpy(destConverted, dep.destination, sizeof(destConverted));
+    utf8tocp(lineConverted);
+    utf8tocp(destConverted);
+
     // Draw line number background - always black (fixed width for all routes)
     uint16_t lineColor = getLineColorWithConfig(dep.line, config ? config->lineColorMap : "");
     int bgWidth = 18; // Fixed width to fit up to 3 characters
@@ -83,12 +91,12 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     // Center the line number text within the background rectangle
     int16_t x1, y1;
     uint16_t w, h;
-    display->getTextBounds(dep.line, 0, 0, &x1, &y1, &w, &h);
+    display->getTextBounds(lineConverted, 0, 0, &x1, &y1, &w, &h);
     // Account for font's left bearing offset (x1) when centering
     int textX = 1 + (bgWidth - w) / 2 - x1;
     // Align baseline with destination (y + 7)
     display->setCursor(textX, y + 7);
-    display->print(dep.line);
+    display->print(lineConverted);
 
     // AC indicator (asterisk before destination)
     int destX = 22; // Fixed position for all destinations (18px max route width + 4px gap)
@@ -103,7 +111,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     // Destination - use condensed font for long names
     display->setTextColor(COLOR_WHITE);
 
-    int destLen = strlen(dep.destination);
+    int destLen = strlen(destConverted);
     int normalMaxChars = dep.hasAC ? 14 : 15;
     const GFXfont* destFont;
     int maxChars;
@@ -140,7 +148,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
 
     // Truncate destination if needed
     char destTrunc[24];
-    strncpy(destTrunc, dep.destination, maxChars);
+    strncpy(destTrunc, destConverted, maxChars);
     destTrunc[maxChars] = '\0';
     display->print(destTrunc);
 
@@ -413,53 +421,26 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
     isDrawing = false;
 }
 
-void DisplayManager::drawFontTest()
+void DisplayManager::drawDemo(const Departure* departures, int departureCount, const char* stopName)
 {
     if (isDrawing)
         return;
 
     isDrawing = true;
     display->clearScreen();
+    delay(1);
 
-    // Czech special characters test string (UTF-8)
-    char testString[64];
-    strcpy(testString, "ĚŠČŘŽÝÁÍÉÚŮĎŤŇ");
+    // Draw sample departures (top 1-3 rows)
+    int rowsToDraw = (departureCount < 3) ? departureCount : 3;
+    for (int i = 0; i < rowsToDraw; i++)
+    {
+        drawDeparture(i, departures[i]);
+        delay(1);
+    }
 
-    // Convert UTF-8 to ISO-8859-2 for display
-    utf8tocp(testString);
-
-    // Row 0: Small font (4pt)
-    display->setFont(fontSmall);
-    display->setTextColor(COLOR_CYAN);
-    display->setCursor(2, 7);
-    display->print("Small:");
-    display->setTextColor(COLOR_WHITE);
-    display->setCursor(35, 7);
-    display->print(testString);
-
-    // Row 1: Medium font (5pt)
-    display->setFont(fontMedium);
-    display->setTextColor(COLOR_GREEN);
-    display->setCursor(2, 15);
-    display->print("Med:");
-    display->setTextColor(COLOR_WHITE);
-    display->setCursor(28, 15);
-    display->print(testString);
-
-    // Row 2: Condensed font (5pt)
-    display->setFont(fontCondensed);
-    display->setTextColor(COLOR_YELLOW);
-    display->setCursor(2, 23);
-    display->print("Cond:");
-    display->setTextColor(COLOR_WHITE);
-    display->setCursor(32, 23);
-    display->print(testString);
-
-    // Row 3: Status
-    display->setFont(fontSmall);
-    display->setTextColor(COLOR_PURPLE);
-    display->setCursor(2, 31);
-    display->print("Czech char test OK");
+    // Draw date/time status bar
+    drawDateTime();
+    delay(1);
 
     isDrawing = false;
 }

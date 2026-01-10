@@ -18,6 +18,12 @@ The SpojBoard displaying real-time Prague transit departures on a 128×32 HUB75 
 
 Automatically switches to condensed font when destination names exceed 16 characters, fitting up to 23 characters on screen while maintaining readability.
 
+## Demo Mode
+
+### Anything Goes if it Fits
+
+![Bober Express](images/demoMode.jpeg)
+
 ## Web Interface
 
 ### Main Configuration Screen
