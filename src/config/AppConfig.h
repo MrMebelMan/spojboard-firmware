@@ -58,13 +58,19 @@ struct Config
 {
     char wifiSsid[64];
     char wifiPassword[64];
-    char apiKey[300];
-    char stopIds[128];      // Comma-separated stop IDs (e.g., "U693Z2P,U693Z1P"), max 12 stops
+
+    // Per-city configuration fields
+    char pragueApiKey[300];    // Golemio API key for Prague
+    char pragueStopIds[128];   // Prague stop IDs (e.g., "U693Z2P,U693Z1P")
+    char berlinStopIds[128];   // Berlin stop IDs (e.g., "900013102")
+    // Note: Berlin BVG API requires no authentication
+
     int refreshInterval;    // Seconds between API calls
     int numDepartures;      // Number of departures to display (1-3 rows on LED matrix)
     int minDepartureTime;   // Minimum departure time in minutes (filter out departures < this)
     int brightness;         // Display brightness (0-255)
     char lineColorMap[256]; // Line color mappings (format: "A=GREEN,B=YELLOW,9*=CYAN")
+    char city[16];          // Transit city: "Prague" or "Berlin"
     bool debugMode;         // Enable telnet logging and verbose output
     bool configured;
 };

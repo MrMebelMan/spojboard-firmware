@@ -13,16 +13,16 @@ void GolemioAPI::setStatusCallback(APIStatusCallback callback)
     statusCallback = callback;
 }
 
-GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
+TransitAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
 {
-    APIResult result = {};
+    TransitAPI::APIResult result = {};
     result.departureCount = 0;
     result.hasError = false;
     result.stopName[0] = '\0';
     result.errorMsg[0] = '\0';
 
-    // Validate inputs
-    if (strlen(config.apiKey) == 0 || strlen(config.stopIds) == 0)
+    // Validate inputs (use Prague-specific fields)
+    if (strlen(config.pragueApiKey) == 0 || strlen(config.pragueStopIds) == 0)
     {
         result.hasError = true;
         strlcpy(result.errorMsg, "Missing API key or stop IDs", sizeof(result.errorMsg));
@@ -38,9 +38,9 @@ GolemioAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
     static Departure tempDepartures[MAX_TEMP_DEPARTURES];
     int tempCount = 0;
 
-    // Parse comma-separated stop IDs
+    // Parse comma-separated stop IDs (use Prague-specific field)
     char stopIdsCopy[128];
-    strlcpy(stopIdsCopy, config.stopIds, sizeof(stopIdsCopy));
+    strlcpy(stopIdsCopy, config.pragueStopIds, sizeof(stopIdsCopy));
 
     char *stopId = strtok(stopIdsCopy, ",");
     bool firstStop = true;
@@ -123,7 +123,7 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
              config.minDepartureTime > 0 ? config.minDepartureTime * -1 : 0);
 
     http.begin(url);
-    http.addHeader("x-access-token", config.apiKey);
+    http.addHeader("x-access-token", config.pragueApiKey);
     http.addHeader("Content-Type", "application/json");
     http.setTimeout(HTTP_TIMEOUT_MS);
 

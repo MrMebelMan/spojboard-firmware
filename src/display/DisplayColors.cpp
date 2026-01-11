@@ -158,14 +158,61 @@ uint16_t getLineColorWithConfig(const char *line, const char *configMap)
                 size_t configLineLen = strlen(configLine);
                 if (configLineLen > 0 && configLine[configLineLen - 1] == '*')
                 {
-                    // Pattern match: check if line starts with prefix (excluding *)
-                    size_t prefixLen = configLineLen - 1;
-                    if (strncasecmp(line, configLine, prefixLen) == 0)
+                    // Count asterisks and find prefix length
+                    // Pattern format: PREFIX*** where * count determines wildcard positions
+                    // Examples: 9* = 2-char lines starting with 9 (91-99)
+                    //           95* = 3-char lines starting with 95 (950-959)
+                    //           4** = 3-char lines starting with 4 (400-499)
+                    int asteriskCount = 0;
+                    size_t prefixLen = 0;
+                    bool invalidPattern = false;
+
+                    // Scan from end to find continuous asterisks
+                    for (int i = configLineLen - 1; i >= 0; i--)
                     {
-                        uint16_t color = parseColorName(colorName);
-                        if (color != 0)
+                        if (configLine[i] == '*')
                         {
-                            return color; // Found pattern match
+                            asteriskCount++;
+                        }
+                        else
+                        {
+                            // Found non-asterisk, rest should be prefix
+                            prefixLen = i + 1;
+                            break;
+                        }
+                    }
+
+                    // Validate pattern: must have prefix (no leading asterisks)
+                    if (prefixLen == 0)
+                    {
+                        invalidPattern = true; // Pattern like "***" is invalid
+                    }
+
+                    // Check if there are asterisks in the middle (not allowed)
+                    for (size_t i = 0; i < prefixLen; i++)
+                    {
+                        if (configLine[i] == '*')
+                        {
+                            invalidPattern = true; // Pattern like "9*5*" is invalid
+                            break;
+                        }
+                    }
+
+                    if (!invalidPattern && asteriskCount > 0)
+                    {
+                        // Expected total length = prefix + number of wildcards
+                        size_t expectedLen = prefixLen + asteriskCount;
+                        size_t lineLen = strlen(line);
+
+                        // Match if: correct length AND starts with prefix
+                        if (lineLen == expectedLen &&
+                            strncasecmp(line, configLine, prefixLen) == 0)
+                        {
+                            uint16_t color = parseColorName(colorName);
+                            if (color != 0)
+                            {
+                                return color; // Found pattern match
+                            }
                         }
                     }
                 }

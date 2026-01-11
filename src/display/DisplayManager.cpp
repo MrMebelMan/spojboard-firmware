@@ -116,13 +116,13 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     const GFXfont* destFont;
     int maxChars;
 
-    normalMaxChars -= (dep.eta >= 100 ? 2 : (dep.eta >= 10 ? 1 : 0));
+    normalMaxChars -= (dep.eta >= 10 || dep.eta < 1) ? 1 : 0;
 
     if (destLen > normalMaxChars)
     {
         // Long destination - use condensed font
         destFont = fontCondensed;
-        maxChars = 23;
+        maxChars = (dep.eta >= 10 || dep.eta < 1) ? 22 : 23;
     }
     else
     {
@@ -219,7 +219,7 @@ void DisplayManager::drawDateTime()
     char dateStr[7];
     strftime(dateStr, 7, "%b %d", &timeinfo);
     utf8tocp(dateStr); // Convert Czech month names
-    display->setCursor(19, y + 7);
+    display->setCursor(21, y + 7);
     display->print(dateStr);
 
     // Time

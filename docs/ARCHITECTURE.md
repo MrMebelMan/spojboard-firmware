@@ -14,23 +14,26 @@ Technical documentation for developers and contributors.
 ## Configuration Constants
 
 - **`MAX_DEPARTURES = 12`** ([DepartureData.h:10](../src/api/DepartureData.h#L10)) - Maximum cache size (hardcoded)
-- **`MAX_TEMP_DEPARTURES = 144`** ([GolemioAPI.h:51](../src/api/GolemioAPI.h#L51)) - Collection buffer size (12 stops × 12 departures)
+- **`MAX_TEMP_DEPARTURES = 144`** (GolemioAPI/BvgAPI) - Collection buffer size (12 stops × 12 departures)
 - **`config.numDepartures`** - User setting for display rows (1-3 only)
 
-**Important:** `config.numDepartures` only controls how many rows to show on the LED matrix (1-3), not API fetch size. The API always fetches `MAX_DEPARTURES` (12) per stop for better caching and sorting. This simplifies the user experience - users don't need to understand API response lengths.
+**Important:** `config.numDepartures` only controls how many rows to show on the LED matrix (1-3), not API fetch size. Both transit APIs (Prague Golemio and Berlin BVG) always fetch `MAX_DEPARTURES` (12) per stop for better caching and sorting. This simplifies the user experience - users don't need to understand API response sizes.
 
 ## Complete Pipeline Flow
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │ 1. USER CONFIGURATION                                            │
-│    config.numDepartures = 2        # Show 2 rows on display      │
-│    config.stopIds = "A,B"          # Query 2 stops               │
+│    config.city = "Prague" or "Berlin"  # Transit city selection  │
+│    config.numDepartures = 2            # Show 2 rows on display  │
+│    config.pragueStopIds = "A,B"        # Query 2 Prague stops    │
+│    config.berlinStopIds = "X,Y"        # Query 2 Berlin stops    │
 └──────────────────────────────────────────────────────────────────┘
                               ↓
 ┌──────────────────────────────────────────────────────────────────┐
 │ 2. API QUERIES (Always fetch MAX_DEPARTURES = 12 per stop)      │
-│    GolemioAPI::fetchDepartures() loops through stops:            │
+│    TransitAPI::fetchDepartures() (GolemioAPI or BvgAPI)          │
+│    loops through stops:                                          │
 │    - Stop A: API call → 12 departures → tempDepartures[0-11]    │
 │    - delay(1000)  # 1-second rate limiting                       │
 │    - Stop B: API call → 12 departures → tempDepartures[12-23]   │
@@ -124,7 +127,7 @@ Technical documentation for developers and contributors.
 
 - **Temp Buffer**: `static Departure tempDepartures[144]` (~7KB)
   - Function-local static to avoid stack overflow
-  - Located in `GolemioAPI::fetchDepartures()`
+  - Located in `GolemioAPI::fetchDepartures()` and `BvgAPI::fetchDepartures()`
   - Allocated once at compile time
 
 - **Cache**: `Departure departures[12]` (~600 bytes)
@@ -140,7 +143,8 @@ Technical documentation for developers and contributors.
 
 ### Heap Usage
 
-- JSON buffer: 8KB for API responses (DynamicJsonDocument)
+- JSON buffer: 8KB for Golemio API responses, 24KB for BVG API responses (DynamicJsonDocument)
+- BVG API responses are more verbose (~1.7KB per departure vs Golemio's more compact format)
 - Configuration: NVS flash storage (persistent across reboots)
 - Typical free heap: ~200KB
 - RAM usage: 21.4% (70KB used of 327KB)
@@ -197,12 +201,14 @@ Layered architecture with zero circular dependencies:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ Layer 6: Application                                    │
-│   main.cpp (orchestrates all modules)                   │
+│   main.cpp (orchestrates all modules, runtime API       │
+│   selection based on config.city)                       │
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
 │ Layer 5: Business Logic                                 │
-│   GolemioAPI, GitHubOTA                                 │
+│   TransitAPI (abstract), GolemioAPI, BvgAPI,            │
+│   GitHubOTA                                             │
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐

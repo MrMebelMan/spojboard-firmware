@@ -47,8 +47,17 @@ uint16_t parseColorName(const char* colorName);
 /**
  * Get line color with user configuration override
  * Checks config first (exact match, then pattern match), falls back to hardcoded defaults
+ *
+ * Pattern format: PREFIX*** where asterisk count determines wildcard positions
+ * - 9* matches 2-digit lines starting with 9 (91-99)
+ * - 95* matches 3-digit lines starting with 95 (950-959)
+ * - 4** matches 3-digit lines starting with 4 (400-499)
+ * - C*** matches 4-digit lines starting with C (C000-C999)
+ *
+ * Invalid patterns: leading asterisks (***), non-trailing asterisks (9*1)
+ *
  * @param line Line number/code
- * @param configMap User configuration string (format: "A=GREEN,B=YELLOW,9*=CYAN,...")
+ * @param configMap User configuration string (format: "A=GREEN,B=YELLOW,9*=CYAN,95*=BLUE,...")
  * @return RGB565 color value
  */
 uint16_t getLineColorWithConfig(const char* line, const char* configMap);

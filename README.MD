@@ -1,6 +1,6 @@
 # SpojBoard - Smart Panel for Onward Journeys
 
-An ESP32-based LED matrix display showing real-time transit departures from Prague's Golemio API.
+An ESP32-based LED matrix display showing real-time transit departures. Supports multiple transit networks: Prague (Golemio API) and Berlin (BVG API).
 
 **SPOJ** = **S**mart **P**anel for **O**nward **J**ourneys (also "spoj" = connection/service in Czech)
 Standalone operation with web-based configuration, no external server required.
@@ -18,19 +18,20 @@ Standalone operation with web-based configuration, no external server required.
 
 ## Features
 
-- **Direct API Access**: Fetches departure data from Golemio PID API every 10-300 seconds (configurable)
+- **Multi-City Support**: Prague (Golemio API) and Berlin (BVG API) with per-city configuration
+- **Direct API Access**: Fetches departure data every 10-300 seconds (configurable)
 - **Local ETA Updates**: Recalculates ETAs every 10 seconds from cached timestamps without additional API calls - reduces server load while keeping display fresh
 - **Extended Buffer**: Always fetches and caches 12 departures per stop for better sorting and filtering
 - **Multi-Stop Support**: Query up to 12 stops simultaneously (144 departure buffer), automatically sorted by departure time with 1s rate limiting
-- **WiFi Setup Portal**: Automatic AP mode with captive portal when WiFi fails - no code editing needed!
-- **Web Configuration**: Easy setup via built-in web interface
+- **WiFi Setup Portal**: Automatic AP mode with captive portal when WiFi fails - no code editing needed
+- **Web Configuration**: Easy setup via built-in web interface with city selector
 - **Persistent Settings**: Configuration stored in ESP32 flash memory, survives reboots
-- **Czech Character Support**: Custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion for Czech station names (ž, š, č, ř, ň, ť, ď, etc.)
+- **Extended Character Support**: Custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion (ž, š, č, ř, ň, ť, ď, ß, etc.)
 - **Adaptive Font Rendering**: Automatically switches to condensed font for long destination names (>16 chars), fitting up to 23 characters on screen
 - **Headsign Shortening**: Automatic shortening of long Czech words (e.g., "Nádraží" → "Nádr.", "nádraží" → "nádr.") to maximize display space
 - **Trip Filtering**: Configurable minimum departure time (default 3 minutes) to hide departures that are too soon to catch
-- **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles
-- **Custom Line Colors**: Configure custom colors for specific lines via web interface (supports pattern matching with wildcards)
+- **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles (Prague only)
+- **Custom Line Colors**: Configure custom colors for specific lines via web interface with exact and pattern matching
 - **Demo Mode**: Preview custom departure data on the display before API configuration - available in both setup and normal modes
 - **Firmware Updates**: GitHub-based OTA updates with user confirmation - check for new releases directly from the web interface
 - **Optional Telnet Logging**: Remote debugging via telnet (port 23) when debug mode is enabled - mirrors all logs over WiFi
@@ -87,8 +88,10 @@ HUB75 LED matrix panels require external 5V power.
 
 3. **Configure via Web UI**
    - Enter your home WiFi credentials (required)
-   - Optionally enter your Golemio API key (get one at [api.golemio.cz/api-keys](https://api.golemio.cz/api-keys/))
-   - Optionally enter your stop ID(s)
+   - Select your transit city (Prague or Berlin)
+   - For Prague: Enter Golemio API key (get one at [api.golemio.cz/api-keys](https://api.golemio.cz/api-keys/))
+   - For Berlin: No API key required
+   - Enter your stop ID(s) - comma-separated for multiple stops
    - Try the demo mode to preview the display before API setup
    - Click "Save & Connect to WiFi"
 
@@ -112,13 +115,14 @@ The built-in web server provides:
 - **Status Dashboard**: WiFi status, API status, memory usage
 - **Configuration Form**:
   - WiFi credentials
-  - Golemio API key
+  - Transit city selector (Prague or Berlin)
+  - API key (Prague only)
   - Stop ID(s) - comma-separated for multiple stops (max 12)
   - Refresh interval (10-300 seconds)
   - Number of departures to display (1-3 rows)
   - Minimum departure time (0-30 minutes) - filter out departures too soon to catch
   - Display brightness (0-255)
-  - Custom line colors with pattern matching (e.g., "9*/9**" for all night lines)
+  - Custom line colors with position-based wildcard patterns (e.g., "9*" for 2-digit, "4**" for 3-digit)
   - Debug mode (enables telnet logging on port 23)
 - **Actions**:
   - Force refresh
@@ -141,9 +145,16 @@ The built-in web server provides:
 
 ## Getting Your Stop ID
 
+### Prague (Golemio API)
 1. Visit [data.pid.cz/stops/json/stops.json](https://data.pid.cz/stops/json/stops.json)
 2. Search for your stop name (Ctrl+F)
 3. Find the `gtfsIds` value (e.g., `U693Z2P`)
+4. You can enter multiple IDs separated by commas
+
+### Berlin (BVG API)
+1. Visit [v6.bvg.transport.rest](https://v6.bvg.transport.rest/)
+2. Use the `/locations` endpoint to search for your stop
+3. Find the stop ID (numeric, e.g., `900013102`)
 4. You can enter multiple IDs separated by commas
 
 ## Display Layout
@@ -191,8 +202,13 @@ These colors are used by default and can be customized via the web interface:
 
 **Customizing Line Colors:**
 - Configure specific colors for individual lines (e.g., "A=RED")
-- Use pattern matching with trailing asterisk (e.g., "9*=CYAN" matches all lines starting with 9)
+- Use position-based wildcard patterns with asterisks as position placeholders:
+  - "9*" matches 2-digit lines (91-99)
+  - "95*" matches 3-digit lines (950-959)
+  - "4**" matches 3-digit lines (400-499)
+  - "C***" matches 4-digit lines (C000-C999)
 - Exact matches take priority over patterns
+- Invalid patterns (leading asterisks "***", non-trailing asterisks "9*1") are ignored
 - Unmapped lines use the hardcoded defaults above
 - Available colors: RED, GREEN, BLUE, YELLOW, ORANGE, PURPLE, CYAN, WHITE
 
@@ -294,17 +310,17 @@ When multiple stop IDs are configured (comma-separated, max 12 stops), the syste
 This ensures you always see the **soonest** departures across all your stops, regardless of which stop they come from. The API always fetches 12 departures per stop for caching and sorting - the user only controls how many rows (1-3) to display on the LED matrix. The 10-second ETA recalculation keeps the display fresh without hammering the API, allowing longer refresh intervals (up to 300s) during peak times.
 
 ### Destination String Shortening
-To maximize display space on the 128×32 LED matrix, long Czech destination names are automatically shortened before display:
+To maximize display space on the 128×32 LED matrix, long Czech destination names are automatically shortened before display (Prague only):
 - "Nádraží" → "Nádr." (uppercase)
 - "nádraží" → "nádr." (lowercase)
 - "Sídliště" → "Sídl."
 - "Nemocnice" → "Nem."
 
-Combined with adaptive font rendering (condensed font for destinations >16 chars), even very long station names fit comfortably on the display. Shortening is applied before UTF-8 to ISO-8859-2 conversion, ensuring Czech diacritics are preserved correctly.
+Combined with adaptive font rendering (condensed font for destinations >16 chars), even very long station names fit comfortably on the display. Shortening is applied before UTF-8 to ISO-8859-2 conversion, ensuring Czech diacritics are preserved correctly. Berlin station names are displayed as-is from the API.
 
-## Fonts & Czech Character Support
+## Fonts & Character Support
 
-SpojBoard uses custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion to display Czech diacritics (**ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý**) from the Golemio API.
+SpojBoard uses custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion to display special characters (**Czech**: ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý; **German**: ß, ẞ, ä, ö, ü, Ä, Ö, Ü) from transit APIs.
 
 For complete details on the font system, UTF-8 conversion, and creating custom fonts, see **[Font System Documentation](docs/FONTS.md)**.
 

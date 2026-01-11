@@ -36,19 +36,20 @@ Common issues and solutions when using SpojBoard.
 
 ## API Issues
 
-### "API Error: HTTP 401"
+### "API Error: HTTP 401" (Prague Only)
 
 **Symptoms:** Display shows "API Error: HTTP 401" or web interface reports authentication failure.
 
-**Cause:** Invalid or missing API key.
+**Cause:** Invalid or missing Golemio API key.
 
 **Solutions:**
 - Verify your API key is correct at [api.golemio.cz/api-keys](https://api.golemio.cz/api-keys/)
 - Generate a new API key if the old one has expired
 - Make sure there are no extra spaces when entering the key
 - Try copying and pasting the key directly from the Golemio website
+- **Note:** Berlin (BVG) does not require an API key
 
-### "API Error: HTTP 429"
+### "API Error: HTTP 429" (Prague Only)
 
 **Symptoms:** Display shows "API Error: HTTP 429" or logs show rate limiting messages.
 
@@ -59,6 +60,7 @@ Common issues and solutions when using SpojBoard.
 - Reduce the number of stops you're querying
 - Wait a few minutes before trying again
 - Check if you have multiple devices using the same API key
+- **Note:** BVG API (Berlin) is public and has different rate limits
 
 ### "No Departures"
 
@@ -67,19 +69,24 @@ Common issues and solutions when using SpojBoard.
 **Possible Causes & Solutions:**
 
 1. **Incorrect Stop ID**
-   - Verify your stop ID at [data.pid.cz/stops/json/stops.json](https://data.pid.cz/stops/json/stops.json)
-   - Make sure you're using the GTFS ID (e.g., "U693Z2P"), not the stop number
+   - **Prague:** Verify at [data.pid.cz/stops/json/stops.json](https://data.pid.cz/stops/json/stops.json) (use GTFS ID like "U693Z2P")
+   - **Berlin:** Verify at [v6.bvg.transport.rest](https://v6.bvg.transport.rest/) using `/locations` endpoint (numeric ID like "900013102")
+   - Make sure you selected the correct city in configuration
 
-2. **No Service at Current Time**
+2. **Wrong City Selected**
+   - Check if you configured Prague stop IDs but selected Berlin as the city (or vice versa)
+   - City and stop IDs must match (Prague uses GTFS IDs, Berlin uses numeric IDs)
+
+3. **No Service at Current Time**
    - Some stops may have no service during night hours
    - Check if the stop has active service at the current time
    - Wait a few minutes and check if departures appear
 
-3. **Minimum Departure Time Filter**
+4. **Minimum Departure Time Filter**
    - The configured minimum departure time may be filtering out all departures
    - Try reducing the minimum departure time in configuration (set to 0 to disable)
 
-4. **Display Working Incorrectly**
+5. **Display Working Incorrectly**
    - Try the demo mode to verify the display hardware is functioning correctly
    - If demo works but live data doesn't, the issue is with API/configuration
 

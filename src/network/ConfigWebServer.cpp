@@ -241,7 +241,12 @@ void ConfigWebServer::handleRoot()
 
     if (!apModeActive)
     {
-        if (strlen(currentConfig->apiKey) > 0)
+        // Display current city's configuration status
+        bool isPrague = (strcmp(currentConfig->city, "Berlin") != 0);
+        bool hasApiKey = isPrague ? (strlen(currentConfig->pragueApiKey) > 0) : true; // Berlin doesn't need API key
+        bool hasStops = isPrague ? (strlen(currentConfig->pragueStopIds) > 0) : (strlen(currentConfig->berlinStopIds) > 0);
+
+        if (hasApiKey && hasStops)
         {
             if (apiError)
             {
@@ -251,11 +256,23 @@ void ConfigWebServer::handleRoot()
             {
                 html += "<div class='status ok'>API OK - " + String(departureCount) + " departures</div>";
             }
-            html += "<p><strong>API Key:</strong> Configured (hidden)</p>";
+
+            if (isPrague)
+            {
+                html += "<p><strong>Prague API Key:</strong> Configured (hidden)</p>";
+            }
+            else
+            {
+                html += "<p><strong>Berlin API:</strong> No authentication required</p>";
+            }
         }
-        else
+        else if (!hasApiKey && isPrague)
         {
-            html += "<div class='status warn'>API Key not configured</div>";
+            html += "<div class='status warn'>Prague API Key not configured</div>";
+        }
+        else if (!hasStops)
+        {
+            html += "<div class='status warn'>Stop IDs not configured</div>";
         }
 
         if (stopName[0])
@@ -291,31 +308,52 @@ void ConfigWebServer::handleRoot()
         html += "<p class='info'>Enter your WiFi password</p>";
     }
 
-    html += "<label>Golemio API Key</label>";
-    // API key is NOT required in AP mode (first time setup)
-    // API key IS required if not in AP mode AND current API key is empty
-    bool apiKeyRequired = !apModeActive && strlen(currentConfig->apiKey) == 0;
-    if (apiKeyRequired)
+    // City selector
+    html += "<label>Transit City</label>";
+    html += "<select name='city' id='citySelect' onchange='switchCity()' required>";
+    bool isPrague = (strcmp(currentConfig->city, "Berlin") != 0);
+    html += "<option value='Prague'" + String(isPrague ? " selected" : "") + ">Prague (PID/Golemio)</option>";
+    html += "<option value='Berlin'" + String(isPrague ? "" : " selected") + ">Berlin (BVG)</option>";
+    html += "</select>";
+    html += "<p class='info'>Select your transit network. Device will restart after changing city.</p>";
+
+    // Hidden inputs to store per-city data
+    html += "<input type='hidden' id='pragueApiKeyData' value='" + String(currentConfig->pragueApiKey) + "'>";
+    html += "<input type='hidden' id='pragueStopsData' value='" + String(currentConfig->pragueStopIds) + "'>";
+    html += "<input type='hidden' id='berlinStopsData' value='" + String(currentConfig->berlinStopIds) + "'>";
+
+    // API Key field (Prague only)
+    html += "<div id='apiKeySection'>";
+    html += "<label><span id='apiKeyLabel'>Prague API Key (Golemio)</span></label>";
+    bool hasPragueKey = strlen(currentConfig->pragueApiKey) > 0;
+    // Show placeholder dots if API key exists, otherwise empty
+    html += "<input type='password' name='apikey' id='apiKeyInput' placeholder='" + String(hasPragueKey ? "••••" : "Enter API key") + "' value=''>";
+    if (apModeActive)
     {
-        html += "<input type='password' name='apikey' placeholder='Enter Golemio API key' required>";
-        html += "<p class='info'>Required: Get your API key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
+        html += "<p class='info' id='apiKeyHelp'>Get your API key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a>. Try the demo first!</p>";
+    }
+    else if (hasPragueKey)
+    {
+        html += "<p class='info' id='apiKeyHelp'>API key configured. Leave empty to keep current key, or enter a new key to replace it. Get keys at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
     }
     else
     {
-        html += "<input type='password' name='apikey' placeholder='Enter Golemio API key'>";
-        if (apModeActive)
-        {
-            html += "<p class='info'>Optional: Configure now or later. Get API key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a>. Try the demo first!</p>";
-        }
-        else
-        {
-            html += "<p class='info'>Leave empty to keep current API key. Get a new key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
-        }
+        html += "<p class='info' id='apiKeyHelp'>Required: Get your API key at <a href='https://api.golemio.cz/api-keys/' target='_blank'>api.golemio.cz</a></p>";
     }
+    html += "</div>";
 
     html += "<label>Stop ID(s)</label>";
-    html += "<input type='text' name='stops' value='" + String(currentConfig->stopIds) + "' required placeholder='e.g., U693Z2P'>";
-    html += "<p class='info'>Comma-separated PID stop IDs. Find IDs at <a href='https://data.pid.cz/stops/json/stops.json' target='_blank'>PID data</a></p>";
+    html += "<input type='text' name='stops' id='stopsInput' value='" + String(isPrague ? currentConfig->pragueStopIds : currentConfig->berlinStopIds) + "' required placeholder='e.g., U693Z2P (Prague) or 900013102 (Berlin)'>";
+    html += "<p class='info' id='stopHelp'>";
+    if (isPrague)
+    {
+        html += "Comma-separated PID stop IDs (e.g., U693Z2P). Find IDs at <a href='https://data.pid.cz/stops/json/stops.json' target='_blank'>PID data</a>";
+    }
+    else
+    {
+        html += "Comma-separated numeric BVG stop IDs (e.g., 900013102). Find IDs at <a href='https://v6.bvg.transport.rest/' target='_blank'>BVG API</a>";
+    }
+    html += "</p>";
 
     html += "<div class='grid'>";
     html += "<div><label>Refresh Interval (sec)</label>";
@@ -339,7 +377,14 @@ void ConfigWebServer::handleRoot()
         html += "<div class='card'>";
         html += "<h2>Line Colors</h2>";
         html += "<p class='info'>Configure custom colors for specific transit lines. Leave empty to use defaults.</p>";
-        html += "<p class='info' style='font-size:0.9em; color:#888;'>💡 Tip: Use * for patterns (e.g., \"9*\" matches all night trams 91-99, \"S*\" matches all S-trains)</p>";
+        html += "<p class='info' style='font-size:0.9em; color:#888;'>";
+        html += "💡 <strong>Pattern matching:</strong> Use * as position placeholders<br>";
+        html += "• <code>9*</code> = 2-digit lines (91-99)<br>";
+        html += "• <code>95*</code> = 3-digit lines (950-959)<br>";
+        html += "• <code>4**</code> = 3-digit lines (400-499)<br>";
+        html += "• <code>C***</code> = 4-digit lines (C000-C999)<br>";
+        html += "• Exact matches (e.g., \"A\", \"91\") take priority over patterns";
+        html += "</p>";
 
         // Table header
         html += "<table id='lineColorTable' style='width:100%; margin-bottom:10px; border-collapse: collapse;'>";
@@ -370,7 +415,7 @@ void ConfigWebServer::handleRoot()
                     html += "<tr>";
                     html += "<td style='padding:8px;'>";
                     html += "<input type='text' class='lineInput' value='" + String(lineName) + "' ";
-                    html += "style='width:80px; padding:5px;' maxlength='4' placeholder='A or 9*'>";
+                    html += "style='width:80px; padding:5px;' maxlength='5' placeholder='A or 9*'>";
                     html += "</td>";
                     html += "<td style='padding:8px;'>";
                     html += "<select class='colorSelect' style='width:100%; padding:5px;'>";
@@ -589,6 +634,69 @@ function escapeHtml(text) {
 )rawliteral";
     }
 
+    // JavaScript for city switching (always included)
+    html += R"rawliteral(
+<script>
+// Track the currently displayed city (starts with server-provided value)
+let currentDisplayedCity = document.getElementById('citySelect').value;
+
+// City switching logic - dynamically show/hide and update fields
+function switchCity() {
+    const newCity = document.getElementById('citySelect').value;
+    const apiKeySection = document.getElementById('apiKeySection');
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const stopsInput = document.getElementById('stopsInput');
+    const stopHelp = document.getElementById('stopHelp');
+
+    // Save current visible stopIds to hidden field BEFORE switching
+    // (currentDisplayedCity contains the city we're switching FROM)
+    if (currentDisplayedCity === 'Prague') {
+        // Currently showing Prague, save Prague stops
+        document.getElementById('pragueStopsData').value = stopsInput.value;
+    } else {
+        // Currently showing Berlin, save Berlin stops
+        document.getElementById('berlinStopsData').value = stopsInput.value;
+    }
+
+    // Now load the new city's data
+    if (newCity === 'Prague') {
+        // Show API key for Prague
+        apiKeySection.style.display = 'block';
+
+        // Load Prague stops from hidden field
+        stopsInput.value = document.getElementById('pragueStopsData').value;
+        stopsInput.placeholder = 'e.g., U693Z2P';
+
+        // Reset API key input field (don't expose saved key, just show placeholder)
+        const pragueApiKey = document.getElementById('pragueApiKeyData').value;
+        apiKeyInput.value = '';
+        apiKeyInput.placeholder = pragueApiKey.length > 0 ? '••••' : 'Enter API key';
+
+        // Update help text
+        stopHelp.innerHTML = 'Comma-separated PID stop IDs (e.g., U693Z2P). Find IDs at <a href="https://data.pid.cz/stops/json/stops.json" target="_blank">PID data</a>';
+    } else {
+        // Hide API key for Berlin
+        apiKeySection.style.display = 'none';
+
+        // Load Berlin stops from hidden field
+        stopsInput.value = document.getElementById('berlinStopsData').value;
+        stopsInput.placeholder = 'e.g., 900013102';
+
+        // Update help text
+        stopHelp.innerHTML = 'Comma-separated numeric BVG stop IDs (e.g., 900013102). Find IDs at <a href="https://v6.bvg.transport.rest/" target="_blank">BVG API</a>';
+    }
+
+    // Update the tracked city to the new one
+    currentDisplayedCity = newCity;
+}
+
+// Initialize city-specific display on page load
+document.addEventListener('DOMContentLoaded', function() {
+    switchCity();
+});
+</script>
+)rawliteral";
+
     // JavaScript for line color configuration
     if (!apModeActive)
     {
@@ -602,7 +710,7 @@ function addLineRow() {
     // Line input cell
     const cell1 = row.insertCell(0);
     cell1.style.padding = '8px';
-    cell1.innerHTML = "<input type='text' class='lineInput' style='width:80px; padding:5px;' maxlength='4' placeholder='A or 9*'>";
+    cell1.innerHTML = "<input type='text' class='lineInput' style='width:80px; padding:5px;' maxlength='5' placeholder='A or 9*'>";
 
     // Color select cell
     const cell2 = row.insertCell(1);
@@ -677,6 +785,7 @@ void ConfigWebServer::handleSave()
     // Create a copy of config to modify
     Config newConfig = *currentConfig;
     bool wifiChanged = false;
+    bool cityChanged = false;
 
     if (server->hasArg("ssid"))
     {
@@ -692,16 +801,44 @@ void ConfigWebServer::handleSave()
         strlcpy(newConfig.wifiPassword, server->arg("password").c_str(), sizeof(newConfig.wifiPassword));
         wifiChanged = true;
     }
+    // Parse city field
+    if (server->hasArg("city"))
+    {
+        String newCity = server->arg("city");
+        // Validate city value
+        if (newCity == "Berlin" || newCity == "Prague")
+        {
+            if (newCity != newConfig.city)
+            {
+                cityChanged = true;
+            }
+            strlcpy(newConfig.city, newCity.c_str(), sizeof(newConfig.city));
+        }
+        else
+        {
+            // Invalid city value, default to Prague
+            strlcpy(newConfig.city, "Prague", sizeof(newConfig.city));
+        }
+    }
+    // Save API key and stops to appropriate city-specific fields
+    String selectedCity = String(newConfig.city);
+
     if (server->hasArg("apikey") && server->arg("apikey").length() > 0)
     {
-        strlcpy(newConfig.apiKey, server->arg("apikey").c_str(), sizeof(newConfig.apiKey));
+        String apiKeyValue = server->arg("apikey");
+        // Only save if it's not the placeholder dots (visual feedback, not actual key)
+        if (apiKeyValue != "••••" && selectedCity == "Prague")
+        {
+            strlcpy(newConfig.pragueApiKey, apiKeyValue.c_str(), sizeof(newConfig.pragueApiKey));
+        }
     }
+
     if (server->hasArg("stops"))
     {
-        strlcpy(newConfig.stopIds, server->arg("stops").c_str(), sizeof(newConfig.stopIds));
+        String stops = server->arg("stops");
 
         // Validate maximum number of stops (with 1s delay per stop, 12 stops = 12s+ query time)
-        int numStops = countStops(newConfig.stopIds);
+        int numStops = countStops(stops.c_str());
         if (numStops > 12)
         {
             server->send(400, "text/plain",
@@ -710,6 +847,16 @@ void ConfigWebServer::handleSave()
             logTimestamp();
             debugPrintln("Config save failed: too many stops");
             return;
+        }
+
+        // Save to city-specific field
+        if (selectedCity == "Prague")
+        {
+            strlcpy(newConfig.pragueStopIds, stops.c_str(), sizeof(newConfig.pragueStopIds));
+        }
+        else if (selectedCity == "Berlin")
+        {
+            strlcpy(newConfig.berlinStopIds, stops.c_str(), sizeof(newConfig.berlinStopIds));
         }
     }
     if (server->hasArg("refresh"))
@@ -766,17 +913,30 @@ void ConfigWebServer::handleSave()
 
     newConfig.configured = true;
 
-    // If in AP mode or WiFi changed, show restart message
-    if (apModeActive || wifiChanged)
+    // If in AP mode, WiFi changed, or city changed, show restart message
+    if (apModeActive || wifiChanged || cityChanged)
     {
         String html = HTML_HEADER;
-        html += "<h1>⏳ Connecting...</h1>";
-        html += "<p>Attempting to connect to WiFi network: <strong>" + String(newConfig.wifiSsid) + "</strong></p>";
-        html += "<p>Please wait... The device will restart and connect to the new network.</p>";
-        html += "<p>If connection fails, the device will return to AP mode.</p>";
+        html += "<h1>⏳ Restarting...</h1>";
+        if (cityChanged)
+        {
+            html += "<p>Transit city changed to: <strong>" + String(newConfig.city) + "</strong></p>";
+            html += "<p>The device will restart to apply the new transit API configuration.</p>";
+            html += "<p>Please wait 10-15 seconds for it to come back online.</p>";
+        }
+        else
+        {
+            html += "<p>Attempting to connect to WiFi network: <strong>" + String(newConfig.wifiSsid) + "</strong></p>";
+            html += "<p>Please wait... The device will restart and connect to the new network.</p>";
+            html += "<p>If connection fails, the device will return to AP mode.</p>";
+        }
         html += "<div class='card'>";
-        html += "<p>After successful connection, access the device at its new IP address on your network.</p>";
+        html += "<p>After successful restart, access the device at its IP address.</p>";
         html += "</div>";
+        html += "<div id='reconnect-msg' style='display:none; margin-top:20px;'>";
+        html += "<p><button onclick='window.location=\"/\"' style='padding:12px 24px; font-size:16px; cursor:pointer; background:#2ed573; color:#000; border:none; border-radius:8px;'>🔌 Reconnect to Device</button></p>";
+        html += "</div>";
+        html += "<script>setTimeout(function(){ document.getElementById('reconnect-msg').style.display='block'; }, 10000);</script>";
         html += HTML_FOOTER;
         server->send(200, "text/html", html);
     }
@@ -792,7 +952,8 @@ void ConfigWebServer::handleSave()
     }
 
     // Call the callback to notify main.cpp
-    onSaveCallback(newConfig, wifiChanged);
+    // Pass true for restart if either WiFi or city changed
+    onSaveCallback(newConfig, wifiChanged || cityChanged);
 }
 
 void ConfigWebServer::handleRefresh()

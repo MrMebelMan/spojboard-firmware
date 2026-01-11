@@ -8,6 +8,7 @@
 #include "config/AppConfig.h"
 #include "api/DepartureData.h"
 #include "api/GolemioAPI.h"
+#include "api/BvgAPI.h"
 #include "display/DisplayManager.h"
 #include "network/WiFiManager.h"
 #include "network/CaptivePortal.h"
@@ -22,7 +23,9 @@ DisplayManager displayManager;
 WiFiManager wifiManager;
 CaptivePortal captivePortal;
 ConfigWebServer webServer;
-GolemioAPI golemioAPI;
+GolemioAPI golemioAPI;  // Prague transit API
+BvgAPI bvgAPI;          // Berlin transit API
+TransitAPI* transitAPI = nullptr;  // Pointer to active API (selected at runtime)
 
 // ============================================================================
 // Configuration Storage (structure defined in config/AppConfig.h)
@@ -110,17 +113,41 @@ void recalculateETAs()
 }
 
 // ============================================================================
-// API Fetch Wrapper - Uses GolemioAPI module
+// Helper Functions
+// ============================================================================
+
+// Check if current city has valid API configuration
+bool isCityConfigured()
+{
+    if (!config.configured)
+    {
+        return false;
+    }
+
+    if (strcmp(config.city, "Berlin") == 0)
+    {
+        // Berlin only needs stop IDs
+        return strlen(config.berlinStopIds) > 0;
+    }
+    else
+    {
+        // Prague needs both API key and stop IDs
+        return strlen(config.pragueApiKey) > 0 && strlen(config.pragueStopIds) > 0;
+    }
+}
+
+// ============================================================================
+// API Fetch Wrapper - Uses TransitAPI interface (GolemioAPI or BvgAPI)
 // ============================================================================
 void fetchDepartures()
 {
-    if (!wifiManager.isConnected())
+    if (!wifiManager.isConnected() || transitAPI == nullptr)
     {
         return;
     }
 
     // Call API client
-    GolemioAPI::APIResult result = golemioAPI.fetchDepartures(config);
+    TransitAPI::APIResult result = transitAPI->fetchDepartures(config);
 
     // Update global state with results
     departureCount = result.departureCount;
@@ -228,6 +255,21 @@ void setup()
     // Initialize logger with config for debug mode checks (MUST be after loadConfig)
     initLogger(&config);
 
+    // Select transit API based on city configuration
+    if (strcmp(config.city, "Berlin") == 0)
+    {
+        transitAPI = &bvgAPI;
+        Serial.println("Using Berlin BVG API");
+    }
+    else
+    {
+        transitAPI = &golemioAPI;
+        Serial.println("Using Prague Golemio API");
+    }
+
+    // Set up API status callback for display updates
+    transitAPI->setStatusCallback(onAPIStatus);
+
     // Initialize display with correct brightness from config
     if (!displayManager.begin(config.brightness))
     {
@@ -236,9 +278,6 @@ void setup()
     }
     displayManager.setConfig(&config);
     logMemory("display_init");
-
-    // Set up API status callback for display updates
-    golemioAPI.setStatusCallback(onAPIStatus);
 
     displayManager.drawStatus("Starting SpojBoard...", "FW v" FIRMWARE_RELEASE, COLOR_WHITE);
 
@@ -313,7 +352,7 @@ void setup()
         }
 
         // Initial API call if configured
-        if (config.configured && strlen(config.apiKey) > 0)
+        if (isCityConfigured())
         {
             fetchDepartures();
             lastApiCall = millis(); // Prevent immediate second call in loop()
@@ -369,7 +408,7 @@ void loop()
                                          wifiManager.isConnected(), wifiManager.isAPMode(),
                                          wifiManager.getAPSSID(), wifiManager.getAPPassword(),
                                          apiError, apiErrorMsg,
-                                         stopName, config.configured && strlen(config.apiKey) > 0,
+                                         stopName, isCityConfigured(),
                                          demoModeActive);
         }
 
@@ -407,7 +446,7 @@ void loop()
     if (!demoModeActive)
     {
         // Periodic API calls (only when connected and not in AP mode)
-        if (wifiManager.isConnected() && config.configured && strlen(config.apiKey) > 0)
+        if (wifiManager.isConnected() && isCityConfigured())
         {
             unsigned long now = millis();
             unsigned long interval = (unsigned long)config.refreshInterval * 1000;
@@ -439,7 +478,7 @@ void loop()
                                      wifiManager.isConnected(), wifiManager.isAPMode(),
                                      wifiManager.getAPSSID(), wifiManager.getAPPassword(),
                                      apiError, apiErrorMsg,
-                                     stopName, config.configured && strlen(config.apiKey) > 0,
+                                     stopName, isCityConfigured(),
                                      demoModeActive);
     }
 

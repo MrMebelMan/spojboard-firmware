@@ -1,21 +1,26 @@
 # SpojBoard Font System
 
-Complete guide to Czech character support and custom font creation.
+Complete guide to character support and custom font creation for Central European languages.
 
 ## Table of Contents
 
-- [Czech Character Support](#czech-character-support)
+- [Character Support](#character-support)
 - [Creating Custom Fonts](#creating-custom-fonts)
 - [Integration Guide](#integration-guide)
 - [Available Fonts](#available-fonts)
 
-## Czech Character Support
+## Character Support
 
-SpojBoard implements full support for Czech diacritical characters using a custom 8-bit font system.
+SpojBoard implements full support for Central European diacritical characters using a custom 8-bit font system.
 
 ### The Problem
 
-Standard Adafruit GFX fonts use 7-bit encoding (ASCII 0x20-0x7E), which doesn't include Czech characters like **ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý**. The Golemio API returns station names in UTF-8 encoding (e.g., "Nádraží Hostivař", "Karlovo náměstí").
+Standard Adafruit GFX fonts use 7-bit encoding (ASCII 0x20-0x7E), which doesn't include special characters like:
+- **Czech**: ž, š, č, ř, ň, ť, ď, ú, ů, á, é, í, ó, ý
+- **German**: ß, ẞ, ä, ö, ü, Ä, Ö, Ü
+- **Polish/Hungarian**: ł, ń, ś, ź, ő, ű
+
+Transit APIs (Golemio for Prague, BVG for Berlin) return station names in UTF-8 encoding (e.g., "Nádraží Hostivař", "Berliner Straße").
 
 ### The Solution
 
@@ -39,14 +44,24 @@ Maps Unicode to ISO-8859-2 with GFX encoding:
 - Located in [src/utils/gfxlatin2.cpp/h](../src/utils/gfxlatin2.h)
 - In-place conversion using `utf8tocp(char* str)` function
 
-### Conversion Example
+### Conversion Examples
 
+**Czech (Prague):**
 ```
 UTF-8: "Nádraží"    → Bytes: 0x4E 0xC3 0xA1 0x64 0x72 0x61 0xC5 0xBE 0xC3 0xAD
                      ↓ decode UTF-8
 Unicode: N á d r a ž í → Code points: U+004E U+00E1 U+0064 U+0072 U+0061 U+017E U+00ED
                      ↓ map to ISO-8859-2 with shift
 ISO-8859-2: 0x4E 0xC1 0x64 0x72 0x61 0xBE 0xCD → Display correctly on LED matrix
+```
+
+**German (Berlin):**
+```
+UTF-8: "Straße"     → Bytes: 0x53 0x74 0x72 0x61 0xC3 0x9F 0x65
+                     ↓ decode UTF-8
+Unicode: S t r a ß e → Code points: U+0053 U+0074 U+0072 U+0061 U+00DF U+0065
+                     ↓ map to ISO-8859-2 with shift
+ISO-8859-2: 0x53 0x74 0x72 0x61 0xCF 0x65 → Display correctly on LED matrix
 ```
 
 ### Usage in Code

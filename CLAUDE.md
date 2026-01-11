@@ -6,19 +6,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **SpojBoard** - Smart Panel for Onward Journeys
 
-ESP32-based transit departure display that fetches real-time data from Prague's Golemio API. Modular Arduino/PlatformIO project for Adafruit MatrixPortal ESP32-S3 with HUB75 LED matrix panels (128x32 display).
+ESP32-based transit departure display that fetches real-time data from multiple transit APIs. Modular Arduino/PlatformIO project for Adafruit MatrixPortal ESP32-S3 with HUB75 LED matrix panels (128x32 display).
 
 **SPOJ** = **S**mart **P**anel for **O**nward **J**ourneys (also "spoj" = connection/service in Czech)
 
 **Key Features:**
+- Multi-city support: Prague (Golemio API) and Berlin (BVG API)
 - Standalone operation with direct API access
 - WiFi captive portal for configuration
-- Persistent settings in ESP32 NVS flash
-- Custom 8-bit ISO-8859-2 GFXfonts with full Czech character support
+- Persistent settings in ESP32 NVS flash with backward compatibility migration
+- Custom 8-bit ISO-8859-2 GFXfonts with full character support (Czech, German, etc.)
 - UTF-8 to ISO-8859-2 automatic conversion for API data
 - Configurable minimum departure time filter
+- Position-based wildcard pattern matching for line colors
 - Demo mode with customizable sample departures
-- Web-based configuration interface
+- Web-based configuration interface with city selector
 - GitHub-based OTA firmware updates with user confirmation
 
 ## Build & Development Commands
@@ -69,19 +71,21 @@ The application follows a layered, modular architecture with zero circular depen
 
 ```
 src/
-├── main.cpp                          # Application orchestration (~340 lines)
+├── main.cpp                          # Application orchestration with runtime API selection
 ├── config/
-│   ├── AppConfig.h/cpp              # Configuration structure & NVS persistence
+│   ├── AppConfig.h/cpp              # Configuration structure & NVS persistence with migration
 ├── display/
 │   ├── DisplayManager.h/cpp         # Display rendering & layout
-│   ├── DisplayColors.h/cpp          # Color system & configurable line color mapping
+│   ├── DisplayColors.h/cpp          # Color system & position-based wildcard matching
 ├── api/
-│   ├── GolemioAPI.h/cpp             # API client for Golemio
+│   ├── TransitAPI.h                 # Abstract base class for transit APIs
+│   ├── GolemioAPI.h/cpp             # Prague Golemio API client
+│   ├── BvgAPI.h/cpp                 # Berlin BVG API client
 │   ├── DepartureData.h/cpp          # Data structures & utilities
 ├── network/
 │   ├── WiFiManager.h/cpp            # WiFi connection & AP mode
 │   ├── CaptivePortal.h/cpp          # DNS server & captive portal
-│   ├── ConfigWebServer.h/cpp        # Web interface handlers
+│   ├── ConfigWebServer.h/cpp        # Web interface with city selector
 │   ├── OTAUpdateManager.h/cpp       # OTA firmware upload handling
 │   ├── GitHubOTA.h/cpp              # GitHub releases integration
 └── utils/
@@ -97,6 +101,7 @@ src/
 - **Callback Pattern**: Modules communicate upward via callbacks (e.g., ConfigWebServer → main.cpp)
 - **Pure Data Structures**: Config passed as parameter, not stored in modules
 - **Static Allocation**: No dynamic allocation in main loop for stability
+- **Interface-Based Design**: TransitAPI abstract base class enables runtime API selection
 
 ### State Machine
 
@@ -125,12 +130,13 @@ Transitions:
   - Destinations >16 chars: Condensed font (DepartureMonoCondensed5pt8b) with 23-char capacity
   - ETA always rendered in regular font for consistency
 - **Dynamic destination truncation**: Text length adjusted based on ETA display width and font choice to prevent overlap
-  - Regular font: maxChars (16 without AC, 15 with AC), reduced by 1 for 2-digit ETA or 2 for 3-digit ETA
-  - Condensed font: maxChars 23, reduced by 2 for 2-digit ETA or 3 for 3-digit ETA
+  - Regular font: maxChars 16, reduced by 1 if ETA ≥10 or <1
+  - Condensed font: maxChars 23 (or 22 if ETA ≥10 or <1)
   - Ensures destinations never overlap with ETA regardless of font used
-- **Configurable line colors**: Custom color mapping system with pattern matching
+- **Configurable line colors**: Custom color mapping system with position-based wildcard patterns
   - User can configure colors via web interface (format: "LINE=COLOR,LINE=COLOR,...")
-  - Supports pattern matching with trailing asterisk (e.g., "9*=CYAN" for night trams 91-99)
+  - Position-based wildcards: asterisks as position placeholders (9*=2-digit, 95*=3-digit, 4**=3-digit, C***=4-digit)
+  - Pattern validation: no leading asterisks, no non-trailing asterisks
   - Two-pass matching: exact matches first, then patterns
   - Falls back to hardcoded defaults if no match found
   - Available colors: RED, GREEN, BLUE, YELLOW, ORANGE, PURPLE, CYAN, WHITE
@@ -140,7 +146,7 @@ Transitions:
   - `DepartureMono4pt8b` (small font) - Used for compact text, line numbers, status
   - `DepartureMono5pt8b` (medium font) - Used for destinations, larger text, ETAs
   - `DepartureMonoCondensed5pt8b` (condensed font) - Automatically used for long destinations (>16 chars)
-  - Full ISO-8859-2 character set (0x20-0xDF) including all Czech diacritics
+  - Full ISO-8859-2 character set (0x20-0xDF) including Czech, German, Polish, Hungarian characters (ž, š, č, ř, ň, ť, ď, ß, ẞ, etc.)
   - Located in `/fonts` directory
 - **UTF-8 Conversion**: API responses in UTF-8 are automatically converted to ISO-8859-2 encoding using in-place conversion (`utf8tocp()`)
 - **Non-blocking updates**: `isDrawing` flag prevents concurrent display access
@@ -159,42 +165,57 @@ HUB75 matrix pins are hardcoded for Adafruit MatrixPortal ESP32-S3 (lines 25-40)
 
 ## API Integration Details
 
-### Golemio API
+### TransitAPI Interface
+- Abstract base class: `TransitAPI` defines common interface for all transit APIs
+- `APIResult` struct: departures array, count, stop name, error status
+- `APIStatusCallback`: callback function type for status updates
+- Runtime API selection: main.cpp selects GolemioAPI or BvgAPI based on `config.city`
+
+### Golemio API (Prague)
 - Endpoint: `https://api.golemio.cz/v2/pid/departureboards`
 - Authentication: `x-access-token` header (get key at api.golemio.cz/api-keys)
 - Query parameters: `ids` (comma-separated stop IDs), `total`, `minutesBefore`, `minutesAfter`
 - Response format: JSON with stops array and departures array
+- Stop ID format: GTFS IDs from PID data (e.g., "U693Z2P")
+- Configuration fields: `config.pragueApiKey`, `config.pragueStopIds`
 - Rate limits: Configurable refresh interval (10-300s) to avoid HTTP 429
-- **Multi-stop rate limiting**: 1-second delay (`delay(1000)`) between API calls when querying multiple stops
-  - Reduces server load and prevents rate limiting
-  - Applied in `GolemioAPI::fetchDepartures()` loop after each `querySingleStop()` call
-
-### Stop ID Format
-- GTFS IDs from PID data (e.g., "U693Z2P")
-- Multiple stops supported via comma separation in config.stopIds
-- Each stop queried individually with separate API calls (with 1s delay between calls)
-- All departures collected, sorted by ETA, filtered by minimum departure time, then top N displayed
 - Find IDs at: https://data.pid.cz/stops/json/stops.json
+
+### BVG API (Berlin)
+- Endpoint: `https://v6.bvg.transport.rest/stops/{stopId}/departures`
+- Authentication: None required (public API)
+- Query parameters: `duration=120`, `results=12`
+- Response format: JSON with departures array
+- Stop ID format: Numeric stop IDs (e.g., "900013102")
+- Configuration fields: `config.berlinStopIds` (no API key needed)
+- JSON buffer: 24KB (BVG responses are verbose, ~1.7KB per departure)
+- Find IDs at: https://v6.bvg.transport.rest/ (use /locations endpoint)
+
+### Multi-Stop Behavior
+- Multiple stops supported via comma separation (max 12 stops)
+- Each stop queried individually with separate API calls (1s delay between calls)
+- All departures collected, sorted by ETA, filtered by minimum departure time, then top N displayed
+- Applies to both Prague and Berlin APIs
 
 ### Departure Data Structure
 ```cpp
 struct Departure {
     char line[8];           // Route short name
-    char destination[32];   // Trip headsign (with abbreviations applied)
+    char destination[32];   // Trip headsign (with abbreviations applied for Prague)
     int eta;                // Calculated from predicted/scheduled timestamp
-    bool hasAC;             // trip.is_air_conditioned
-    bool isDelayed;         // From delay.minutes field
-    int delayMinutes;
+    bool hasAC;             // trip.is_air_conditioned (Prague only)
+    bool isDelayed;         // From delay field
+    int delayMinutes;       // Delay in minutes
 }
 ```
 
-**Destination Abbreviations**: Long Czech words are automatically shortened to fit display:
+**Destination Abbreviations** (Prague only): Long Czech words are automatically shortened to fit display:
 - "Nádraží" → "Nádr." (uppercase)
 - "nádraží" → "nádr." (lowercase)
 - "Sídliště" → "Sídl."
 - "Nemocnice" → "Nem."
 
-Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to preserve diacritics.
+Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to preserve diacritics. Berlin station names are displayed as-is from the API.
 
 ## Hardware Constraints
 
@@ -207,8 +228,8 @@ Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to pres
 
 ## Web Interface Routes
 
-- `GET /` - Main dashboard with status and config form
-- `POST /save` - Save configuration (triggers restart if WiFi changed)
+- `GET /` - Main dashboard with status and config form (includes city selector)
+- `POST /save` - Save configuration (triggers restart if WiFi or city changed)
 - `POST /refresh` - Force immediate API call
 - `POST /reboot` - Device restart
 - `GET /demo` - Demo configuration page with editable sample departures
@@ -228,20 +249,29 @@ Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to pres
 NVS namespace: "transport"
 - `wifiSsid` (String)
 - `wifiPass` (String)
-- `apiKey` (String)
-- `stopIds` (String, comma-separated)
+- `city` (String, 16 chars) - Transit city: "Prague" or "Berlin"
+- `pragueApiKey` (String, 300 chars) - Golemio API key for Prague
+- `pragueStopIds` (String, 128 chars) - Prague stop IDs (comma-separated)
+- `berlinStopIds` (String, 128 chars) - Berlin stop IDs (comma-separated)
 - `refresh` (Int, seconds, 10-300)
 - `numDeps` (Int, 1-6)
 - `minDepTime` (Int, minutes, 0-30) - Filter out departures below this time
 - `brightness` (Int, 0-255) - Display brightness level
 - `lineColorMap` (String, max 256 chars) - Custom line color mappings (format: "LINE=COLOR,LINE=COLOR,...")
-  - Supports pattern matching with trailing asterisk (e.g., "9*=CYAN")
+  - Position-based wildcards: asterisks as position placeholders (e.g., "9*=CYAN", "4**=BLUE")
   - Falls back to hardcoded defaults if empty or no match
+- `debugMode` (Bool) - Enable telnet logging
 - `configured` (Bool)
 
-Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, 30s refresh, 3 departures, 3min minimum departure time, brightness 90, empty lineColorMap (uses hardcoded defaults)
+**Backward Compatibility Migration**:
+- Old `apiKey` field → `pragueApiKey`
+- Old `stopIds` field → `pragueStopIds`
+- Automatic migration on first load with new firmware
+- Old keys removed from NVS after migration
 
-**First-time setup (AP Mode)**: Only WiFi credentials required, API key and stop IDs optional. Demo mode available before API configuration.
+Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, city "Prague", 60s refresh, 3 departures, 3min minimum departure time, brightness 90, empty lineColorMap (uses hardcoded defaults), debug mode disabled
+
+**First-time setup (AP Mode)**: Only WiFi credentials required, city and stop IDs optional. Demo mode available before API configuration.
 
 ## Time Handling
 

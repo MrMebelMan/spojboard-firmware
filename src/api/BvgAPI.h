@@ -1,5 +1,5 @@
-#ifndef GOLEMIOAPI_H
-#define GOLEMIOAPI_H
+#ifndef BVGAPI_H
+#define BVGAPI_H
 
 #include "TransitAPI.h"
 #include "DepartureData.h"
@@ -7,17 +7,17 @@
 #include <ArduinoJson.h>
 
 // ============================================================================
-// Golemio API Client
+// BVG API Client
 // ============================================================================
 
 /**
- * Client for Prague's Golemio API (api.golemio.cz)
+ * Client for Berlin's BVG API (v6.bvg.transport.rest)
  * Fetches real-time departure information for public transit stops.
  */
-class GolemioAPI : public TransitAPI
+class BvgAPI : public TransitAPI
 {
 public:
-    GolemioAPI();
+    BvgAPI();
 
     /**
      * Set callback for API status updates
@@ -26,8 +26,8 @@ public:
     virtual void setStatusCallback(APIStatusCallback callback) override;
 
     /**
-     * Fetch departures from Golemio API
-     * @param config Configuration with API key, stop IDs, and filters
+     * Fetch departures from BVG API
+     * @param config Configuration with stop IDs and filters
      * @return APIResult with departures, count, and error status
      */
     virtual APIResult fetchDepartures(const Config &config) override;
@@ -35,7 +35,7 @@ public:
 private:
     APIStatusCallback statusCallback;
     static constexpr int MAX_TEMP_DEPARTURES = MAX_DEPARTURES * 12;  // Buffer for up to 12 stops at full capacity
-    static constexpr int JSON_BUFFER_SIZE = 12288;  // 12KB - handles busy stops with many departures
+    static constexpr int JSON_BUFFER_SIZE = 24576;  // 24KB - BVG API returns verbose responses (~1.7KB per departure)
     static constexpr int HTTP_TIMEOUT_MS = 10000;
 
     /**
@@ -61,4 +61,4 @@ private:
     void parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount);
 };
 
-#endif // GOLEMIOAPI_H
+#endif // BVGAPI_H
