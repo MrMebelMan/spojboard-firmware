@@ -128,10 +128,6 @@ private:
     static void otaProgressCallback(size_t progress, size_t total);
     static void githubOtaProgressCallback(size_t progress, size_t total);
     static ConfigWebServer* instanceForCallback;  // Static instance pointer for callbacks
-
-    // HTML templates
-    static const char* HTML_HEADER;
-    static const char* HTML_FOOTER;
 };
 
 #endif // CONFIGWEBSERVER_H

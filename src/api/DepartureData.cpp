@@ -18,9 +18,11 @@ static const StringReplacement replacements[] = {
     {"Sídliště", "Sídl."},
     {"Nemocnice", "Nem."},
     {"nádraží", "nádr."},
+    {"S+U Hauptbahnhof", "Hauptbahnhof"},
     {" Hauptbahnhof", " Hbf"},
     {"Bahnhof", "Bhf"},
     {"(Berlin)", "(B)"},
+    {" Richtung ", "->"},
 };
 static const int replacementCount = sizeof(replacements) / sizeof(replacements[0]);
 

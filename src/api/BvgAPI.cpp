@@ -331,9 +331,17 @@ void BvgAPI::parseDepartureObject(JsonObject depJson, const Config &config, Depa
             platformDisplay = spacePos + 1;  // Skip "Gleis " prefix
         }
 
-        // Truncate to 3 characters if longer
-        strncpy(tempDepartures[tempCount].platform, platformDisplay, 3);
-        tempDepartures[tempCount].platform[3] = '\0';
+        // Copy to platform field, removing parentheses
+        char *dest = tempDepartures[tempCount].platform;
+        int destIdx = 0;
+        for (int i = 0; platformDisplay[i] != '\0' && destIdx < 3; i++)
+        {
+            if (platformDisplay[i] != '(' && platformDisplay[i] != ')')
+            {
+                dest[destIdx++] = platformDisplay[i];
+            }
+        }
+        dest[destIdx] = '\0';
 
         if (config.debugMode && strlen(platformDisplay) > 3)
         {
