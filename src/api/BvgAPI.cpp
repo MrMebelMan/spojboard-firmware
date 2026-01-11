@@ -69,12 +69,10 @@ TransitAPI::APIResult BvgAPI::fetchDepartures(const Config &config)
     // Sort all collected departures by ETA (ascending)
     qsort(tempDepartures, tempCount, sizeof(Departure), compareDepartures);
 
-    // Filter by minimum departure time and copy top N departures to result
-    int maxDepartures = config.numDepartures;
-    if (maxDepartures > MAX_DEPARTURES)
-        maxDepartures = MAX_DEPARTURES;
-
-    for (int i = 0; i < tempCount && result.departureCount < maxDepartures; i++)
+    // Filter by minimum departure time and copy to final array (up to MAX_DEPARTURES for caching)
+    // Note: config.numDepartures is used for display only, not for limiting cache size
+    result.departureCount = 0;
+    for (int i = 0; i < tempCount && result.departureCount < MAX_DEPARTURES; i++)
     {
         // Skip departures below minimum departure time
         if (tempDepartures[i].eta < config.minDepartureTime)
@@ -111,8 +109,9 @@ bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
 
     // Calculate offset time: current time + minDepartureTime (in seconds)
     // BVG API accepts Unix timestamps (seconds since epoch)
+    // Add 90-second buffer: BVG API returns departures ~80s before 'when' time + HTTP latency
     time_t now = time(nullptr);
-    time_t whenTime = now + (config.minDepartureTime * 60);
+    time_t whenTime = now + (config.minDepartureTime * 60) + 90;
 
     snprintf(url, sizeof(url),
              "https://v6.bvg.transport.rest/stops/%s/departures?duration=120&results=12&when=%ld",
@@ -125,8 +124,10 @@ bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
     debugPrint("BVG API: Querying stop ");
     debugPrintln(stopId);
     logTimestamp();
-    debugPrint("BVG API: URL: ");
-    debugPrintln(url);
+    char debugMsg[128];
+    snprintf(debugMsg, sizeof(debugMsg), "BVG API: URL: %s (now=%ld, when=%ld, offset=%d min)",
+             url, (long)now, (long)whenTime, config.minDepartureTime);
+    debugPrintln(debugMsg);
 
     bool success = false;
     int httpCode = 0;
@@ -329,26 +330,28 @@ void BvgAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartures,
     // Calculate ETA (minutes from now)
     time_t now = time(nullptr);
     int etaSeconds = tempDepartures[tempCount].departureTime - now;
+
+    // Skip departures that are in the past (negative or zero etaSeconds)
+    // Must check BEFORE division because -4/60 = 0 (integer division rounds toward zero)
+    if (etaSeconds < 0)
+    {
+        logTimestamp();
+        char debugMsg[64];
+        snprintf(debugMsg, sizeof(debugMsg), "BVG API: Skipping departure - in the past: %d seconds", etaSeconds);
+        debugPrintln(debugMsg);
+        return;
+    }
+
     tempDepartures[tempCount].eta = etaSeconds / 60;
 
     // Debug log for first few departures
-    if (tempCount < 3)
+    if (tempCount < 16)
     {
         logTimestamp();
         char debugMsg[128];
         snprintf(debugMsg, sizeof(debugMsg), "BVG API: Line %s to %s - ETA: %d min (when: %s, now: %ld, dep: %ld)",
                  lineName, direction, tempDepartures[tempCount].eta, when, (long)now, (long)tempDepartures[tempCount].departureTime);
         debugPrintln(debugMsg);
-    }
-
-    // Skip departures that are in the past (negative ETA)
-    if (tempDepartures[tempCount].eta < 0)
-    {
-        logTimestamp();
-        char debugMsg[64];
-        snprintf(debugMsg, sizeof(debugMsg), "BVG API: Skipping departure - negative ETA: %d", tempDepartures[tempCount].eta);
-        debugPrintln(debugMsg);
-        return;
     }
 
     // Parse delay (seconds in BVG API)

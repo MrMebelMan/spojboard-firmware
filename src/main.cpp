@@ -73,14 +73,31 @@ void recalculateETAs()
     time_t now;
     time(&now);
 
+    logTimestamp();
+    char startMsg[64];
+    snprintf(startMsg, sizeof(startMsg), "ETA Recalc: Processing %d departures (now=%ld)", departureCount, (long)now);
+    debugPrintln(startMsg);
+
     int validCount = 0;
+    int filteredCount = 0;
     for (int i = 0; i < departureCount; i++)
     {
         int diffSec = difftime(departures[i].departureTime, now);
         int eta = (diffSec > 0) ? (diffSec / 60) : 0;
 
-        // Only keep departures that haven't passed yet
-        if (eta > 0)
+        // Log first 3 departures for debugging
+        if (i < 3)
+        {
+            logTimestamp();
+            char debugMsg[128];
+            snprintf(debugMsg, sizeof(debugMsg), "  [%d] Line %s: depTime=%ld, diffSec=%d, eta=%d min",
+                     i, departures[i].line, (long)departures[i].departureTime, diffSec, eta);
+            debugPrintln(debugMsg);
+        }
+
+        // Only keep departures above minimum departure time
+        int minEta = (config.minDepartureTime > 0) ? config.minDepartureTime : 0;
+        if (eta > minEta)
         {
             // Copy departure if we're filtering out previous entries
             if (validCount != i)
@@ -90,14 +107,26 @@ void recalculateETAs()
             departures[validCount].eta = eta;
             validCount++;
         }
+        else
+        {
+            filteredCount++;
+            if (filteredCount <= 3)  // Log first 3 filtered departures
+            {
+                logTimestamp();
+                char filterMsg[128];
+                snprintf(filterMsg, sizeof(filterMsg), "  Filtered: Line %s (eta=%d min, minEta=%d min, diffSec=%d)",
+                         departures[i].line, eta, minEta, diffSec);
+                debugPrintln(filterMsg);
+            }
+        }
     }
 
     // Update count if we filtered any departures
     if (validCount != departureCount)
     {
-        char msg[64];
-        snprintf(msg, sizeof(msg), "ETA Recalc: Filtered %d stale departures", departureCount - validCount);
         logTimestamp();
+        char msg[64];
+        snprintf(msg, sizeof(msg), "ETA Recalc: Filtered %d stale departures, %d remain", filteredCount, validCount);
         debugPrintln(msg);
     }
 
@@ -106,9 +135,23 @@ void recalculateETAs()
     // Resort departures by ETA after recalculation
     if (departureCount > 1)
     {
+        logTimestamp();
+        debugPrintln("ETA Recalc: Resorting departures by ETA");
         qsort(departures, departureCount, sizeof(Departure), compareDepartures);
+
+        // Log final order (first 3)
+        for (int i = 0; i < departureCount && i < 3; i++)
+        {
+            logTimestamp();
+            char sortMsg[96];
+            snprintf(sortMsg, sizeof(sortMsg), "  After sort [%d]: Line %s, ETA=%d min",
+                     i, departures[i].line, departures[i].eta);
+            debugPrintln(sortMsg);
+        }
     }
 
+    logTimestamp();
+    debugPrintln("ETA Recalc: Complete, display update triggered");
     needsDisplayUpdate = true;
 }
 

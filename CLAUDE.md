@@ -171,6 +171,53 @@ HUB75 matrix pins are hardcoded for Adafruit MatrixPortal ESP32-S3 (lines 25-40)
 - `APIStatusCallback`: callback function type for status updates
 - Runtime API selection: main.cpp selects GolemioAPI or BvgAPI based on `config.city`
 
+### Departure Caching and Display Logic
+
+**CRITICAL DISTINCTION**: Three different limits control departure handling:
+
+**MAX_TEMP_DEPARTURES (144 = MAX_DEPARTURES * 12)**:
+- Temporary buffer for collecting departures from multiple stops
+- Can hold up to 144 departures during collection phase (12 stops × 12 departures each)
+- Used in `tempDepartures[]` array before sorting/filtering
+
+**MAX_DEPARTURES (12)**:
+- Defined in `DepartureData.h:10`
+- **Final cache size**: Maximum departures stored in `APIResult.departures[]` array
+- After collecting/sorting/filtering, top 12 departures are cached for reuse
+- Both GolemioAPI and BvgAPI follow this limit
+
+**config.numDepartures (1-3, user-configurable)**:
+- User setting from web interface (default = 3)
+- **Display limit only**: How many rows to render on LED matrix
+- Hardware constraint: LED matrix has only 3 rows for departures (rows 0-2), row 3 is status bar
+- Does NOT affect cache size - APIs always store up to 12 in cache
+- Display layer (main.cpp) uses this to decide how many cached departures to show
+
+**Architecture Flow**:
+```
+1. API queries multiple stops (up to 12 stops)
+2. Collect all departures into tempDepartures[144] array (MAX_TEMP_DEPARTURES)
+3. Sort all collected departures by ETA (ascending)
+4. Filter by config.minDepartureTime
+5. Copy top MAX_DEPARTURES (12) to result.departures[] cache
+6. Display layer reads config.numDepartures and shows only that many rows
+```
+
+**Example with Multiple Stops**:
+- User configures 2 stops, `numDepartures = 3`
+- BvgAPI queries stop 1: gets 13 departures → adds to tempDepartures
+- BvgAPI queries stop 2: gets 11 departures → adds to tempDepartures (total: 24)
+- Sort all 24 by ETA
+- Filter by minDepartureTime: 20 remain valid
+- **Cached in result**: Top 12 departures (MAX_DEPARTURES limit)
+- **Displayed on screen**: 3 departures (config.numDepartures)
+- **Benefit**: Remaining 9 cached departures available for display cycling without API re-fetch
+
+**Bug Fix History** (January 2026):
+- BvgAPI previously limited cache to `config.numDepartures` (wrong - saved only 3!)
+- Fixed to match GolemioAPI behavior: always cache up to MAX_DEPARTURES (12)
+- This allows display to show/cycle through more departures without repeated API calls
+
 ### Golemio API (Prague)
 - Endpoint: `https://api.golemio.cz/v2/pid/departureboards`
 - Authentication: `x-access-token` header (get key at api.golemio.cz/api-keys)
