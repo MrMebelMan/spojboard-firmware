@@ -15,6 +15,7 @@ struct Departure
     char destination[32]; // Destination/headsign
     int eta;              // Minutes until departure (recalculated from departureTime)
     time_t departureTime; // Unix timestamp of departure (from API)
+    char platform[8];     // Platform/track (e.g., "D", "3", optional)
     bool hasAC;           // Air conditioning
     bool isDelayed;       // Has delay
     int delayMinutes;     // Delay in minutes

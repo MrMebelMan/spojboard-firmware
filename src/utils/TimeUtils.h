@@ -48,4 +48,24 @@ bool getFormattedTime(char* buffer, size_t size, const char* format = "%Y-%m-%d 
  */
 bool getCurrentTime(struct tm* timeinfo);
 
+// ============================================================================
+// Localized Date/Time Functions
+// ============================================================================
+
+/**
+ * Get localized day of week abbreviation (3 characters)
+ * @param tm_wday Day of week (0=Sunday, 6=Saturday)
+ * @param lang Language code: "en", "cs", or "de"
+ * @return Pointer to day abbreviation string (PROGMEM)
+ */
+const char* getLocalizedDay(int tm_wday, const char* lang);
+
+/**
+ * Get localized month abbreviation (3 characters)
+ * @param tm_mon Month (0=January, 11=December)
+ * @param lang Language code: "en", "cs", or "de"
+ * @return Pointer to month abbreviation string (PROGMEM)
+ */
+const char* getLocalizedMonth(int tm_mon, const char* lang);
+
 #endif // TIMEUTILS_H

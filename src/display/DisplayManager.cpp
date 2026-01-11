@@ -81,12 +81,18 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
 
     // Draw line number background - always black (fixed width for all routes)
     uint16_t lineColor = getLineColorWithConfig(dep.line, config ? config->lineColorMap : "");
-    int bgWidth = 18; // Fixed width to fit up to 3 characters
+    int bgWidth = 18; // Fixed width to fit up to 4 characters
     display->fillRect(1, y + 1, bgWidth, 7, COLOR_BLACK);
 
     // Line number text - colored text on black background
     display->setTextColor(lineColor);
-    display->setFont(fontMedium);
+
+    // Select font based on line number length
+    // 1-3 characters: medium font (6px/char)
+    // 4 characters: condensed font (4px/char)
+    int lineLen = strlen(lineConverted);
+    const GFXfont* lineFont = (lineLen >= 4) ? fontCondensed : fontMedium;
+    display->setFont(lineFont);
 
     // Center the line number text within the background rectangle
     int16_t x1, y1;
@@ -108,28 +114,71 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
         destX += 6;
     }
 
-    // Destination - use condensed font for long names
+    // Calculate space reserved for platform (if enabled and present)
+    int platformReservedPx = 0;
+    bool willShowPlatform = false;
+    if (config && config->showPlatform && dep.platform[0] != '\0')
+    {
+        willShowPlatform = true;
+        // Dynamic reservation based on platform length:
+        // 1 char: medium font (6px) + 3px buffer = 9px
+        // 2 chars: condensed font (8px) + 3px buffer = 11px
+        // 3 chars: condensed font (12px) + 3px buffer = 15px
+        int platformLen = strlen(dep.platform);
+        if (platformLen >= 3)
+        {
+            platformReservedPx = 15;  // 3 condensed chars + buffer
+        }
+        else if (platformLen == 2)
+        {
+            platformReservedPx = 11;  // 2 condensed chars + buffer
+        }
+        else
+        {
+            platformReservedPx = 9;   // 1 medium char + buffer
+        }
+    }
+
+    // Destination - adaptive font based on available space
     display->setTextColor(COLOR_WHITE);
 
     int destLen = strlen(destConverted);
-    int normalMaxChars = dep.hasAC ? 14 : 15;
+
+    // Calculate available space: ETA position - destination start - platform reservation
+    // ETA positions: 111px (wide: >=10 or <1), 117px (narrow: 1-9)
+    int etaPosition = (dep.eta >= 10 || dep.eta < 1) ? 111 : 117;
+
+    // When platform is shown, always reserve space for widest ETA (111px)
+    // to keep platform alignment consistent across rows
+    int spaceCalcEta = (platformReservedPx > 0) ? 111 : etaPosition;
+    int availableSpace = spaceCalcEta - destX - platformReservedPx;
+
+    // Font selection based on destination length and available space
     const GFXfont* destFont;
     int maxChars;
 
-    normalMaxChars -= (dep.eta >= 10 || dep.eta < 1) ? 1 : 0;
+    // Thresholds: fontMedium @ 6px/char, fontCondensed @ 4px/char
+    // Without platform: ~89px → 14 chars (medium) or 22 chars (condensed)
+    // With platform: ~74px → 12 chars (medium) or 18 chars (condensed)
+    int mediumThreshold = platformReservedPx > 0 ? 12 : 14;
+    mediumThreshold -= dep.hasAC ? 1 : 0;
 
-    if (destLen > normalMaxChars)
-    {
-        // Long destination - use condensed font
-        destFont = fontCondensed;
-        maxChars = (dep.eta >= 10 || dep.eta < 1) ? 22 : 23;
-    }
-    else
+    if (destLen <= mediumThreshold)
     {
         // Short destination - use regular font
         destFont = fontMedium;
-        maxChars = normalMaxChars;
+        maxChars = availableSpace / 6;  // 6px per char
     }
+    else
+    {
+        // Long destination - use condensed font
+        destFont = fontCondensed;
+        maxChars = availableSpace / 4;  // 4px per char
+    }
+
+    // Safety cap: prevent buffer overflow
+    if (maxChars > 23) maxChars = 23;  // destTrunc buffer size
+    if (maxChars < 1) maxChars = 1;     // Ensure at least 1 char
 
     display->setFont(destFont);
     display->setCursor(destX, y + 7);
@@ -140,15 +189,42 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     destTrunc[maxChars] = '\0';
     display->print(destTrunc);
 
-    // ETA display
-    int etaCursor = 117;
-    if (dep.eta >= 10 || dep.eta < 1)
+    // Platform display (if enabled and present)
+    if (willShowPlatform)
     {
-        etaCursor = 111;
+        // Convert platform to ISO-8859-2 (in case of special characters)
+        char platformConverted[8];
+        strlcpy(platformConverted, dep.platform, sizeof(platformConverted));
+        utf8tocp(platformConverted);
+
+        // Safety truncation to 3 characters
+        if (strlen(platformConverted) > 3)
+        {
+            platformConverted[3] = '\0';
+        }
+
+        // Select font based on platform length (same logic as line numbers)
+        int platformLen = strlen(platformConverted);
+        const GFXfont* platformFont = (platformLen >= 2) ? fontCondensed : fontMedium;
+        display->setFont(platformFont);
+
+        // Get actual text bounds for proper alignment (like line number centering)
+        int16_t px1, py1;
+        uint16_t pw, ph;
+        display->getTextBounds(platformConverted, 0, 0, &px1, &py1, &pw, &ph);
+
+        // Position: right-align to widest ETA position (111px for ">1h")
+        // Account for font's left bearing offset (px1) for precise positioning
+        int platformX = 111 - pw - 3 - px1;
+
+        display->setTextColor(COLOR_CYAN);  // Match AC indicator
+        display->setCursor(platformX, y + 7);
+        display->print(platformConverted);
     }
 
+    // ETA display (use etaPosition already calculated above)
     display->setFont(fontMedium);
-    display->setCursor(etaCursor, y + 7);
+    display->setCursor(etaPosition, y + 7);
 
     // ETA color based on time
     if (dep.eta < 2)
@@ -176,9 +252,9 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     }
     else if (dep.eta >= 60)
     {
-        display->setCursor(etaCursor - 2, y + 7);
+        display->setCursor(etaPosition - 2, y + 7);
         display->print(">");
-        display->setCursor(etaCursor + 6, y + 7);
+        display->setCursor(etaPosition + 6, y + 7);
         display->print("1");
         display->setFont(fontCondensed);
         display->print("h");
@@ -208,18 +284,23 @@ void DisplayManager::drawDateTime()
     display->setFont(fontSmall);
     display->setTextColor(COLOR_WHITE);
 
-    // Day of week
-    char dayStr[6];
-    strftime(dayStr, 6, "%a|", &timeinfo);
-    utf8tocp(dayStr); // Convert Czech day names
+    // Get language setting (default to "en" if config not set)
+    const char* lang = (config && config->language[0]) ? config->language : "en";
+
+    // Day of week (localized)
+    char dayStr[8];
+    const char* localDay = getLocalizedDay(timeinfo.tm_wday, lang);
+    snprintf(dayStr, sizeof(dayStr), "%s", localDay);
+    utf8tocp(dayStr);
     display->setCursor(2, y + 7);
     display->print(dayStr);
 
-    // Date
-    char dateStr[7];
-    strftime(dateStr, 7, "%b %d", &timeinfo);
-    utf8tocp(dateStr); // Convert Czech month names
-    display->setCursor(21, y + 7);
+    // Date (localized month)
+    char dateStr[10];
+    const char* localMonth = getLocalizedMonth(timeinfo.tm_mon, lang);
+    snprintf(dateStr, sizeof(dateStr), "%s %02d", localMonth, timeinfo.tm_mday);
+    utf8tocp(dateStr);
+    display->setCursor(26, y + 7);
     display->print(dateStr);
 
     // Time

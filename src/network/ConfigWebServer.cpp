@@ -311,9 +311,12 @@ void ConfigWebServer::handleRoot()
     // City selector
     html += "<label>Transit City</label>";
     html += "<select name='city' id='citySelect' onchange='switchCity()' required>";
-    bool isPrague = (strcmp(currentConfig->city, "Berlin") != 0);
+    bool isMqtt = (strcmp(currentConfig->city, "MQTT") == 0);
+    bool isBerlin = (strcmp(currentConfig->city, "Berlin") == 0);
+    bool isPrague = !isMqtt && !isBerlin;
     html += "<option value='Prague'" + String(isPrague ? " selected" : "") + ">Prague (PID/Golemio)</option>";
-    html += "<option value='Berlin'" + String(isPrague ? "" : " selected") + ">Berlin (BVG)</option>";
+    html += "<option value='Berlin'" + String(isBerlin ? " selected" : "") + ">Berlin (BVG)</option>";
+    html += "<option value='MQTT'" + String(isMqtt ? " selected" : "") + ">MQTT (Custom)</option>";
     html += "</select>";
     html += "<p class='info'>Select your transit network. Device will restart after changing city.</p>";
 
@@ -342,6 +345,65 @@ void ConfigWebServer::handleRoot()
     }
     html += "</div>";
 
+    // MQTT Configuration Section
+    html += "<div id='mqttSection' style='display:none;'>";
+    html += "<h3>MQTT Broker Settings</h3>";
+    html += "<label>MQTT Broker Address</label>";
+    html += "<input type='text' name='mqttBroker' id='mqttBrokerInput' placeholder='192.168.1.100 or mqtt.example.com' value='" + String(currentConfig->mqttBroker) + "'>";
+    html += "<p class='info'>IP address or hostname of MQTT broker</p>";
+
+    html += "<div class='grid'>";
+    html += "<div><label>MQTT Broker Port</label>";
+    html += "<input type='number' name='mqttPort' id='mqttPortInput' min='1' max='65535' value='" + String(currentConfig->mqttPort) + "'></div>";
+
+    html += "<div><label>MQTT Username (optional)</label>";
+    html += "<input type='text' name='mqttUser' id='mqttUserInput' placeholder='Leave empty for no auth' value='" + String(currentConfig->mqttUsername) + "'></div>";
+    html += "</div>";
+
+    html += "<label>MQTT Password (optional)</label>";
+    html += "<input type='password' name='mqttPass' id='mqttPassInput' placeholder='Leave empty for no auth' value='" + String(currentConfig->mqttPassword) + "'>";
+    html += "<p class='info'>Leave username empty for no authentication</p>";
+
+    html += "<div class='grid'>";
+    html += "<div><label>Request Topic</label>";
+    html += "<input type='text' name='mqttReqTopic' id='mqttReqTopicInput' placeholder='transit/request' value='" + String(currentConfig->mqttRequestTopic) + "'></div>";
+
+    html += "<div><label>Response Topic</label>";
+    html += "<input type='text' name='mqttRespTopic' id='mqttRespTopicInput' placeholder='transit/response' value='" + String(currentConfig->mqttResponseTopic) + "'></div>";
+    html += "</div>";
+
+    html += "<label>ETA Mode</label>";
+    html += "<select name='mqttEtaMode' id='mqttEtaModeInput' onchange='updateEtaModeHelp()'>";
+    html += "<option value='0'" + String(!currentConfig->mqttUseEtaMode ? " selected" : "") + ">Timestamp Mode (Unix timestamp, recalculated every 10s)</option>";
+    html += "<option value='1'" + String(currentConfig->mqttUseEtaMode ? " selected" : "") + ">ETA Mode (Pre-calculated minutes, no recalc)</option>";
+    html += "</select>";
+    html += "<p class='info'>Choose how departure times are provided by your MQTT source</p>";
+    html += "<p id='etaModeHelp' class='info' style='background-color:#2a3f5f; padding:10px; border-radius:4px; margin-top:8px;'></p>";
+
+    html += "<h3>JSON Field Mappings</h3>";
+    html += "<p class='info'>Configure field names in your MQTT JSON response. Defaults match example format.</p>";
+    html += "<div class='grid'>";
+    html += "<div><label>Line Number Field</label>";
+    html += "<input type='text' name='mqttFldLine' value='" + String(currentConfig->mqttFieldLine) + "' placeholder='line'></div>";
+
+    html += "<div><label>Destination Field</label>";
+    html += "<input type='text' name='mqttFldDest' value='" + String(currentConfig->mqttFieldDestination) + "' placeholder='dest'></div>";
+
+    html += "<div><label>ETA Field (minutes)</label>";
+    html += "<input type='text' name='mqttFldEta' value='" + String(currentConfig->mqttFieldEta) + "' placeholder='eta'></div>";
+
+    html += "<div><label>Timestamp Field (unix)</label>";
+    html += "<input type='text' name='mqttFldTime' value='" + String(currentConfig->mqttFieldTimestamp) + "' placeholder='dep'></div>";
+
+    html += "<div><label>Platform Field (optional)</label>";
+    html += "<input type='text' name='mqttFldPlat' value='" + String(currentConfig->mqttFieldPlatform) + "' placeholder='plt'></div>";
+
+    html += "<div><label>AC Flag Field (optional)</label>";
+    html += "<input type='text' name='mqttFldAC' value='" + String(currentConfig->mqttFieldAC) + "' placeholder='ac'></div>";
+    html += "</div>";
+    html += "<p class='info'><strong>Note:</strong> For MQTT, configure minimum departure time filtering on your server to keep responses minimal.</p>";
+    html += "</div>"; // End mqttSection
+
     html += "<label>Stop ID(s)</label>";
     html += "<input type='text' name='stops' id='stopsInput' value='" + String(isPrague ? currentConfig->pragueStopIds : currentConfig->berlinStopIds) + "' required placeholder='e.g., U693Z2P (Prague) or 900013102 (Berlin)'>";
     html += "<p class='info' id='stopHelp'>";
@@ -363,12 +425,30 @@ void ConfigWebServer::handleRoot()
     html += "<input type='number' name='numdeps' value='" + String(currentConfig->numDepartures) + "' min='1' max='3'></div>";
 
     html += "<div><label>Min Departure Time (min)</label>";
-    html += "<input type='number' name='mindeptime' value='" + String(currentConfig->minDepartureTime) + "' min='0' max='30'></div>";
+    html += "<input type='number' name='mindeptime' id='minDepTimeInput' value='" + String(currentConfig->minDepartureTime) + "' min='0' max='30'>";
+    html += "<p id='minDepTimeHelp' class='info' style='display:none; margin-top:5px; font-size:0.9em;'>⚠️ <strong>MQTT:</strong> Set this value on both server (initial filter) and device (recalculation filter). Server filters at send time, device filters during 10s recalcs.</p>";
+    html += "</div>";
 
     html += "<div><label>Display Brightness (0-255)</label>";
     html += "<input type='number' name='brightness' value='" + String(currentConfig->brightness) + "' min='0' max='255'></div>";
 
+    // Language selector
+    html += "<div><label>Calendar Locale</label>";
+    html += "<select name='language'>";
+    bool isEn = (strcmp(currentConfig->language, "en") == 0 || currentConfig->language[0] == '\0');
+    bool isCs = (strcmp(currentConfig->language, "cs") == 0);
+    bool isDe = (strcmp(currentConfig->language, "de") == 0);
+    html += "<option value='en'" + String(isEn ? " selected" : "") + ">English</option>";
+    html += "<option value='cs'" + String(isCs ? " selected" : "") + ">Czech</option>";
+    html += "<option value='de'" + String(isDe ? " selected" : "") + ">German</option>";
+    html += "</select>";
+    html += "<p class='info' style='margin-top:2px; font-size:11px; color:#999;'>Language for day/month names in status bar</p></div>";
+
     html += "<div style='margin-top:10px;'><label><input type='checkbox' name='debugmode' " + String(currentConfig->debugMode ? "checked" : "") + "> Enable Debug Mode (Telnet on port 23)</label></div>";
+    html += "<div style='margin-top:10px;'><label><input type='checkbox' name='showplatform' " + String(currentConfig->showPlatform ? "checked" : "") + "> Show Platform/Track</label>";
+    html += "<p class='info' style='margin-top:2px; font-size:11px; color:#999;'>";
+    html += "Display platform between destination and ETA (if available). ";
+    html += "Reduces destination space by 2-3 characters.</p></div>";
     html += "</div>";
 
     // Line Colors section (only show when not in AP mode)
@@ -640,34 +720,77 @@ function escapeHtml(text) {
 // Track the currently displayed city (starts with server-provided value)
 let currentDisplayedCity = document.getElementById('citySelect').value;
 
+// Update ETA mode help text based on selection
+function updateEtaModeHelp() {
+    const etaModeSelect = document.getElementById('mqttEtaModeInput');
+    const helpText = document.getElementById('etaModeHelp');
+
+    if (!etaModeSelect || !helpText) return;
+
+    const isEtaMode = (etaModeSelect.value === '1');
+
+    if (isEtaMode) {
+        helpText.innerHTML = '⏱️ <strong>Refresh Interval Recommendation:</strong> Set to <strong>10-60 seconds</strong> for frequent updates from server. Device displays pre-calculated ETAs without recalculation.';
+    } else {
+        helpText.innerHTML = '🔄 <strong>Refresh Interval Recommendation:</strong> Set to <strong>>60 seconds</strong> based on how many departures your server sends. Device recalculates ETAs every 10 seconds automatically.';
+    }
+}
+
 // City switching logic - dynamically show/hide and update fields
 function switchCity() {
     const newCity = document.getElementById('citySelect').value;
     const apiKeySection = document.getElementById('apiKeySection');
+    const mqttSection = document.getElementById('mqttSection');
     const apiKeyInput = document.getElementById('apiKeyInput');
     const stopsInput = document.getElementById('stopsInput');
     const stopHelp = document.getElementById('stopHelp');
+    const minDepTimeInput = document.getElementById('minDepTimeInput');
+    const minDepTimeHelp = document.getElementById('minDepTimeHelp');
 
     // Save current visible stopIds to hidden field BEFORE switching
     // (currentDisplayedCity contains the city we're switching FROM)
     if (currentDisplayedCity === 'Prague') {
-        // Currently showing Prague, save Prague stops
         document.getElementById('pragueStopsData').value = stopsInput.value;
-    } else {
-        // Currently showing Berlin, save Berlin stops
+    } else if (currentDisplayedCity === 'Berlin') {
         document.getElementById('berlinStopsData').value = stopsInput.value;
     }
+    // MQTT doesn't use stops field
 
     // Now load the new city's data
-    if (newCity === 'Prague') {
-        // Show API key for Prague
+    if (newCity === 'MQTT') {
+        // Hide API key and stops for MQTT
+        apiKeySection.style.display = 'none';
+        mqttSection.style.display = 'block';
+        stopsInput.style.display = 'none';
+        stopHelp.style.display = 'none';
+
+        // Remove required attribute for MQTT (doesn't use stops)
+        stopsInput.removeAttribute('required');
+        stopsInput.value = '';
+
+        // Show minDepartureTime help text for MQTT
+        if (minDepTimeHelp) minDepTimeHelp.style.display = 'block';
+
+        // Update ETA mode help text
+        updateEtaModeHelp();
+    } else if (newCity === 'Prague') {
+        // Show API key for Prague, hide MQTT
         apiKeySection.style.display = 'block';
+        mqttSection.style.display = 'none';
+        stopsInput.style.display = 'block';
+        stopHelp.style.display = 'block';
+
+        // Add required attribute back
+        stopsInput.setAttribute('required', '');
+
+        // Hide minDepartureTime help text (MQTT only)
+        if (minDepTimeHelp) minDepTimeHelp.style.display = 'none';
 
         // Load Prague stops from hidden field
         stopsInput.value = document.getElementById('pragueStopsData').value;
         stopsInput.placeholder = 'e.g., U693Z2P';
 
-        // Reset API key input field (don't expose saved key, just show placeholder)
+        // Reset API key input field
         const pragueApiKey = document.getElementById('pragueApiKeyData').value;
         apiKeyInput.value = '';
         apiKeyInput.placeholder = pragueApiKey.length > 0 ? '••••' : 'Enter API key';
@@ -675,8 +798,17 @@ function switchCity() {
         // Update help text
         stopHelp.innerHTML = 'Comma-separated PID stop IDs (e.g., U693Z2P). Find IDs at <a href="https://data.pid.cz/stops/json/stops.json" target="_blank">PID data</a>';
     } else {
-        // Hide API key for Berlin
+        // Berlin: Hide API key and MQTT
         apiKeySection.style.display = 'none';
+        mqttSection.style.display = 'none';
+        stopsInput.style.display = 'block';
+        stopHelp.style.display = 'block';
+
+        // Add required attribute back
+        stopsInput.setAttribute('required', '');
+
+        // Hide minDepartureTime help text (MQTT only)
+        if (minDepTimeHelp) minDepTimeHelp.style.display = 'none';
 
         // Load Berlin stops from hidden field
         stopsInput.value = document.getElementById('berlinStopsData').value;
@@ -693,6 +825,7 @@ function switchCity() {
 // Initialize city-specific display on page load
 document.addEventListener('DOMContentLoaded', function() {
     switchCity();
+    updateEtaModeHelp();
 });
 </script>
 )rawliteral";
@@ -806,7 +939,7 @@ void ConfigWebServer::handleSave()
     {
         String newCity = server->arg("city");
         // Validate city value
-        if (newCity == "Berlin" || newCity == "Prague")
+        if (newCity == "Berlin" || newCity == "Prague" || newCity == "MQTT")
         {
             if (newCity != newConfig.city)
             {
@@ -858,7 +991,57 @@ void ConfigWebServer::handleSave()
         {
             strlcpy(newConfig.berlinStopIds, stops.c_str(), sizeof(newConfig.berlinStopIds));
         }
+        // MQTT doesn't use stops field
     }
+
+    // Parse MQTT-specific fields (when city is MQTT)
+    if (selectedCity == "MQTT")
+    {
+        if (server->hasArg("mqttBroker"))
+            strlcpy(newConfig.mqttBroker, server->arg("mqttBroker").c_str(), sizeof(newConfig.mqttBroker));
+
+        if (server->hasArg("mqttPort"))
+        {
+            newConfig.mqttPort = server->arg("mqttPort").toInt();
+            if (newConfig.mqttPort < 1) newConfig.mqttPort = 1;
+            if (newConfig.mqttPort > 65535) newConfig.mqttPort = 65535;
+        }
+
+        if (server->hasArg("mqttUser"))
+            strlcpy(newConfig.mqttUsername, server->arg("mqttUser").c_str(), sizeof(newConfig.mqttUsername));
+
+        if (server->hasArg("mqttPass"))
+            strlcpy(newConfig.mqttPassword, server->arg("mqttPass").c_str(), sizeof(newConfig.mqttPassword));
+
+        if (server->hasArg("mqttReqTopic"))
+            strlcpy(newConfig.mqttRequestTopic, server->arg("mqttReqTopic").c_str(), sizeof(newConfig.mqttRequestTopic));
+
+        if (server->hasArg("mqttRespTopic"))
+            strlcpy(newConfig.mqttResponseTopic, server->arg("mqttRespTopic").c_str(), sizeof(newConfig.mqttResponseTopic));
+
+        if (server->hasArg("mqttEtaMode"))
+            newConfig.mqttUseEtaMode = (server->arg("mqttEtaMode") == "1");
+
+        // Parse JSON field mappings
+        if (server->hasArg("mqttFldLine"))
+            strlcpy(newConfig.mqttFieldLine, server->arg("mqttFldLine").c_str(), sizeof(newConfig.mqttFieldLine));
+
+        if (server->hasArg("mqttFldDest"))
+            strlcpy(newConfig.mqttFieldDestination, server->arg("mqttFldDest").c_str(), sizeof(newConfig.mqttFieldDestination));
+
+        if (server->hasArg("mqttFldEta"))
+            strlcpy(newConfig.mqttFieldEta, server->arg("mqttFldEta").c_str(), sizeof(newConfig.mqttFieldEta));
+
+        if (server->hasArg("mqttFldTime"))
+            strlcpy(newConfig.mqttFieldTimestamp, server->arg("mqttFldTime").c_str(), sizeof(newConfig.mqttFieldTimestamp));
+
+        if (server->hasArg("mqttFldPlat"))
+            strlcpy(newConfig.mqttFieldPlatform, server->arg("mqttFldPlat").c_str(), sizeof(newConfig.mqttFieldPlatform));
+
+        if (server->hasArg("mqttFldAC"))
+            strlcpy(newConfig.mqttFieldAC, server->arg("mqttFldAC").c_str(), sizeof(newConfig.mqttFieldAC));
+    }
+
     if (server->hasArg("refresh"))
     {
         newConfig.refreshInterval = server->arg("refresh").toInt();
@@ -891,9 +1074,24 @@ void ConfigWebServer::handleSave()
         if (newConfig.brightness > 255)
             newConfig.brightness = 255;
     }
+    if (server->hasArg("language"))
+    {
+        String lang = server->arg("language");
+        if (lang == "cs" || lang == "de" || lang == "en")
+        {
+            strlcpy(newConfig.language, lang.c_str(), sizeof(newConfig.language));
+        }
+        else
+        {
+            strlcpy(newConfig.language, "en", sizeof(newConfig.language));
+        }
+    }
 
     // Debug mode checkbox (unchecked = not present in POST data)
     newConfig.debugMode = server->hasArg("debugmode");
+
+    // Show platform checkbox (unchecked = not present in POST data)
+    newConfig.showPlatform = server->hasArg("showplatform");
 
     // Line color map (always update when not in AP mode to handle empty case)
     if (!apModeActive)
@@ -1367,6 +1565,11 @@ void ConfigWebServer::handleDemo()
         html += "<div><label>ETA (minutes)</label>";
         html += "<input type='number' name='eta" + String(i) + "' value='" + String(i * 2) + "' min='0' max='120' required></div>";
 
+        html += "<div><label>Platform/Track <span style='color:#888; font-size:0.9em;'>(optional)</span></label>";
+        html += "<input type='text' name='platform" + String(i) + "' value='" +
+                (i == 1 ? "2" : (i == 2 ? "1" : "")) +
+                "' maxlength='3' placeholder='e.g., 2, A, 12'></div>";
+
         html += "<div style='margin-top:10px;'><label><input type='checkbox' name='ac" + String(i) + "' " +
                 (i == 1 ? "checked" : "") + "> Air Conditioned</label></div>";
 
@@ -1417,6 +1620,7 @@ async function startDemo(event) {
             line: formData.get('line' + i),
             destination: formData.get('dest' + i),
             eta: parseInt(formData.get('eta' + i)),
+            platform: formData.get('platform' + i) || '',
             hasAC: formData.has('ac' + i)
         });
     }
@@ -1493,9 +1697,22 @@ void ConfigWebServer::handleStartDemo()
         if (etaEnd < 0) etaEnd = body.indexOf("}", etaStart);
         String etaValue = body.substring(etaStart, etaEnd);
 
+        // Find "platform":"<value>" pattern (optional)
+        String platformKey = "\"platform\":\"";
+        int platformStart = body.indexOf(platformKey, etaEnd);
+        String platformValue = "";
+        int lastFieldEnd = etaEnd;
+        if (platformStart >= 0)
+        {
+            platformStart += platformKey.length();
+            int platformEnd = body.indexOf("\"", platformStart);
+            platformValue = body.substring(platformStart, platformEnd);
+            lastFieldEnd = platformEnd;
+        }
+
         // Find "hasAC":<value> pattern
         String acKey = "\"hasAC\":";
-        int acStart = body.indexOf(acKey, etaEnd);
+        int acStart = body.indexOf(acKey, lastFieldEnd);
         bool hasAC = false;
         if (acStart >= 0)
         {
@@ -1510,6 +1727,7 @@ void ConfigWebServer::handleStartDemo()
         strlcpy(demoDepartures[demoCount].line, lineValue.c_str(), sizeof(demoDepartures[demoCount].line));
         strlcpy(demoDepartures[demoCount].destination, destValue.c_str(), sizeof(demoDepartures[demoCount].destination));
         demoDepartures[demoCount].eta = etaValue.toInt();
+        strlcpy(demoDepartures[demoCount].platform, platformValue.c_str(), sizeof(demoDepartures[demoCount].platform));
         demoDepartures[demoCount].hasAC = hasAC;
         demoDepartures[demoCount].isDelayed = false;
         demoDepartures[demoCount].delayMinutes = 0;

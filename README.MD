@@ -1,9 +1,9 @@
 # SpojBoard - Smart Panel for Onward Journeys
 
-An ESP32-based LED matrix display showing real-time transit departures. Supports multiple transit networks: Prague (Golemio API) and Berlin (BVG API).
+An ESP32-based LED matrix display showing real-time transit departures. Supports multiple data sources: direct API integration (Prague Golemio, Berlin BVG) or MQTT for home automation integration.
 
 **SPOJ** = **S**mart **P**anel for **O**nward **J**ourneys (also "spoj" = connection/service in Czech)
-Standalone operation with web-based configuration, no external server required.
+Standalone operation with web-based configuration, no external server required for direct API mode.
 
 ![SpojBoard Device](docs/images/spojboard-device.jpg)
 
@@ -11,6 +11,7 @@ Standalone operation with web-based configuration, no external server required.
 
 ## Documentation
 
+- **[MQTT Integration Guide](docs/MQTT.md)** - Home Assistant integration, custom data sources, and dual filtering setup
 - **[Architecture & Data Flow](docs/ARCHITECTURE.md)** - Technical details, pipeline flow, and design rationale
 - **[Font System](docs/FONTS.md)** - Czech character support and custom font creation guide
 - **[Hardware Guide for Generic ESP32-S3](docs/GENERIC_ESP32S3.md)** - Alternative hardware setup
@@ -18,8 +19,9 @@ Standalone operation with web-based configuration, no external server required.
 
 ## Features
 
-- **Multi-City Support**: Prague (Golemio API) and Berlin (BVG API) with per-city configuration
+- **Multi-Source Support**: Direct API (Prague Golemio, Berlin BVG) or MQTT for home automation integration (Home Assistant, custom sources)
 - **Direct API Access**: Fetches departure data every 10-300 seconds (configurable)
+- **MQTT Integration**: Request/response pattern with configurable JSON field mappings, dual ETA modes (timestamp/pre-calculated), and server-side aggregation - see [MQTT Guide](docs/MQTT.md)
 - **Local ETA Updates**: Recalculates ETAs every 10 seconds from cached timestamps without additional API calls - reduces server load while keeping display fresh
 - **Extended Buffer**: Always fetches and caches 12 departures per stop for better sorting and filtering
 - **Multi-Stop Support**: Query up to 12 stops simultaneously (144 departure buffer), automatically sorted by departure time with 1s rate limiting
@@ -88,10 +90,11 @@ HUB75 LED matrix panels require external 5V power.
 
 3. **Configure via Web UI**
    - Enter your home WiFi credentials (required)
-   - Select your transit city (Prague or Berlin)
-   - For Prague: Enter Golemio API key (get one at [api.golemio.cz/api-keys](https://api.golemio.cz/api-keys/))
-   - For Berlin: No API key required
-   - Enter your stop ID(s) - comma-separated for multiple stops
+   - Select your data source:
+     - **Prague**: Enter Golemio API key (get one at [api.golemio.cz/api-keys](https://api.golemio.cz/api-keys/))
+     - **Berlin**: No API key required
+     - **MQTT**: Configure broker and topics - see [MQTT Guide](docs/MQTT.md)
+   - Enter your stop ID(s) - comma-separated for multiple stops (not used for MQTT)
    - Try the demo mode to preview the display before API setup
    - Click "Save & Connect to WiFi"
 
@@ -115,12 +118,13 @@ The built-in web server provides:
 - **Status Dashboard**: WiFi status, API status, memory usage
 - **Configuration Form**:
   - WiFi credentials
-  - Transit city selector (Prague or Berlin)
+  - Data source selector (Prague, Berlin, or MQTT)
   - API key (Prague only)
-  - Stop ID(s) - comma-separated for multiple stops (max 12)
+  - MQTT broker, topics, and field mappings (MQTT only) - see [MQTT Guide](docs/MQTT.md)
+  - Stop ID(s) - comma-separated for multiple stops (max 12, not used for MQTT)
   - Refresh interval (10-300 seconds)
   - Number of departures to display (1-3 rows)
-  - Minimum departure time (0-30 minutes) - filter out departures too soon to catch
+  - Minimum departure time (0-30 minutes) - filter during ETA recalculation
   - Display brightness (0-255)
   - Custom line colors with position-based wildcard patterns (e.g., "9*" for 2-digit, "4**" for 3-digit)
   - Debug mode (enables telnet logging on port 23)
@@ -156,6 +160,9 @@ The built-in web server provides:
 2. Use the `/locations` endpoint to search for your stop
 3. Find the stop ID (numeric, e.g., `900013102`)
 4. You can enter multiple IDs separated by commas
+
+### MQTT (Home Assistant / Custom)
+No stop IDs needed - configure your MQTT broker to aggregate and filter departures server-side. See **[MQTT Integration Guide](docs/MQTT.md)** for complete setup instructions.
 
 ## Display Layout
 

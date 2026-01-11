@@ -55,10 +55,11 @@ private:
     /**
      * Parse departure JSON object and add to temp array
      * @param depJson JSON object for single departure
+     * @param config Configuration (for debug flag)
      * @param tempDepartures Array to add to
      * @param tempCount Current count (will be incremented)
      */
-    void parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount);
+    void parseDepartureObject(JsonObject depJson, const Config &config, Departure *tempDepartures, int &tempCount);
 };
 
 #endif // BVGAPI_H

@@ -9,6 +9,7 @@
 #include "api/DepartureData.h"
 #include "api/GolemioAPI.h"
 #include "api/BvgAPI.h"
+#include "api/MqttAPI.h"
 #include "display/DisplayManager.h"
 #include "network/WiFiManager.h"
 #include "network/CaptivePortal.h"
@@ -25,6 +26,7 @@ CaptivePortal captivePortal;
 ConfigWebServer webServer;
 GolemioAPI golemioAPI;  // Prague transit API
 BvgAPI bvgAPI;          // Berlin transit API
+MqttAPI mqttAPI;        // MQTT transit API
 TransitAPI* transitAPI = nullptr;  // Pointer to active API (selected at runtime)
 
 // ============================================================================
@@ -74,30 +76,19 @@ void recalculateETAs()
     time(&now);
 
     logTimestamp();
-    char startMsg[64];
-    snprintf(startMsg, sizeof(startMsg), "ETA Recalc: Processing %d departures (now=%ld)", departureCount, (long)now);
-    debugPrintln(startMsg);
+    debugPrint("ETA Recalc: ");
+    debugPrint(departureCount);
+    debugPrint(" deps -> ");
 
     int validCount = 0;
-    int filteredCount = 0;
     for (int i = 0; i < departureCount; i++)
     {
         int diffSec = difftime(departures[i].departureTime, now);
         int eta = (diffSec > 0) ? (diffSec / 60) : 0;
 
-        // Log first 3 departures for debugging
-        if (i < 3)
-        {
-            logTimestamp();
-            char debugMsg[128];
-            snprintf(debugMsg, sizeof(debugMsg), "  [%d] Line %s: depTime=%ld, diffSec=%d, eta=%d min",
-                     i, departures[i].line, (long)departures[i].departureTime, diffSec, eta);
-            debugPrintln(debugMsg);
-        }
-
-        // Only keep departures above minimum departure time
-        int minEta = (config.minDepartureTime > 0) ? config.minDepartureTime : 0;
-        if (eta > minEta)
+        // Filter: Keep only departures that meet minimum departure time threshold
+        // (applies to all APIs including MQTT - filters during recalculation)
+        if (eta > 0 && eta >= config.minDepartureTime)
         {
             // Copy departure if we're filtering out previous entries
             if (validCount != i)
@@ -107,28 +98,17 @@ void recalculateETAs()
             departures[validCount].eta = eta;
             validCount++;
         }
-        else
-        {
-            filteredCount++;
-            if (filteredCount <= 3)  // Log first 3 filtered departures
-            {
-                logTimestamp();
-                char filterMsg[128];
-                snprintf(filterMsg, sizeof(filterMsg), "  Filtered: Line %s (eta=%d min, minEta=%d min, diffSec=%d)",
-                         departures[i].line, eta, minEta, diffSec);
-                debugPrintln(filterMsg);
-            }
-        }
     }
 
-    // Update count if we filtered any departures
+    debugPrint(validCount);
+    debugPrint(" valid");
     if (validCount != departureCount)
     {
-        logTimestamp();
-        char msg[64];
-        snprintf(msg, sizeof(msg), "ETA Recalc: Filtered %d stale departures, %d remain", filteredCount, validCount);
-        debugPrintln(msg);
+        debugPrint(" (filtered ");
+        debugPrint(departureCount - validCount);
+        debugPrint(")");
     }
+    debugPrintln("");
 
     departureCount = validCount;
 
@@ -171,6 +151,15 @@ bool isCityConfigured()
     {
         // Berlin only needs stop IDs
         return strlen(config.berlinStopIds) > 0;
+    }
+    else if (strcmp(config.city, "MQTT") == 0)
+    {
+        // MQTT needs broker, topics, and field mappings
+        return strlen(config.mqttBroker) > 0 &&
+               strlen(config.mqttRequestTopic) > 0 &&
+               strlen(config.mqttResponseTopic) > 0 &&
+               strlen(config.mqttFieldLine) > 0 &&
+               strlen(config.mqttFieldDestination) > 0;
     }
     else
     {
@@ -303,6 +292,11 @@ void setup()
     {
         transitAPI = &bvgAPI;
         Serial.println("Using Berlin BVG API");
+    }
+    else if (strcmp(config.city, "MQTT") == 0)
+    {
+        transitAPI = &mqttAPI;
+        Serial.println("Using MQTT API");
     }
     else
     {

@@ -66,3 +66,31 @@ void debugPrintln(const char* message)
         TelnetLogger::getInstance().println(message);
     }
 }
+
+void debugPrint(int value)
+{
+    // Always print to Serial
+    Serial.print(value);
+
+    // Mirror to telnet ONLY if debug mode enabled AND telnet is active
+    if (g_config && g_config->debugMode && TelnetLogger::getInstance().isActive())
+    {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d", value);
+        TelnetLogger::getInstance().print(buf);
+    }
+}
+
+void debugPrint(unsigned int value)
+{
+    // Always print to Serial
+    Serial.print(value);
+
+    // Mirror to telnet ONLY if debug mode enabled AND telnet is active
+    if (g_config && g_config->debugMode && TelnetLogger::getInstance().isActive())
+    {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%u", value);
+        TelnetLogger::getInstance().print(buf);
+    }
+}

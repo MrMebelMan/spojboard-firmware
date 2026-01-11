@@ -237,7 +237,7 @@ bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
         if (tempCount >= MAX_TEMP_DEPARTURES)
             break;
 
-        parseDepartureObject(depJson, tempDepartures, tempCount);
+        parseDepartureObject(depJson, config, tempDepartures, tempCount);
     }
 
     logTimestamp();
@@ -248,7 +248,7 @@ bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
     return true;
 }
 
-void BvgAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount)
+void BvgAPI::parseDepartureObject(JsonObject depJson, const Config &config, Departure *tempDepartures, int &tempCount)
 {
     // Extract line name (from line.name)
     if (!depJson.containsKey("line") || !depJson["line"].containsKey("name"))
@@ -277,27 +277,73 @@ void BvgAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartures,
         return; // Skip if no destination
     }
 
-    // Extract platform and append to destination if present
-    // const char *platform = depJson["platform"].as<const char*>();
-    // if (platform && strlen(platform) > 0)
-    // {
-    //     // Parse platform: if it contains a space (e.g., "Gleis 12"), use only the part after the space
-    //     // Otherwise use the entire string (e.g., "12", "A", "1a")
-    //     const char *platformDisplay = platform;
-    //     const char *spacePos = strchr(platform, ' ');
-    //     if (spacePos != nullptr)
-    //     {
-    //         platformDisplay = spacePos + 1;  // Use part after space
-    //     }
+    // Destination - apply prefix cleanup for RE/S lines
+    strlcpy(tempDepartures[tempCount].destination, direction, sizeof(tempDepartures[tempCount].destination));
 
-    //     // Format: "Destination <Pl>"
-    //     snprintf(tempDepartures[tempCount].destination, sizeof(tempDepartures[tempCount].destination),
-    //              "%s %s", direction, platformDisplay);
-    // }
-    // else
-    // {
-        strlcpy(tempDepartures[tempCount].destination, direction, sizeof(tempDepartures[tempCount].destination));
-    // }
+    // For RE and S lines, clean up destination prefixes
+    if (lineName[0] == 'R' && lineName[1] == 'E' && (lineName[2] == '\0' || lineName[2] == ' '))
+    {
+        // RE line - clean up destination
+        char* dest = tempDepartures[tempCount].destination;
+        if (strncmp(dest, "S+U ", 4) == 0)
+        {
+            // Replace "S+U " with "U "
+            memmove(dest, dest + 2, strlen(dest) - 1); // Shift by 2 positions, keep null terminator
+        }
+        else if (strncmp(dest, "S ", 2) == 0)
+        {
+            // Remove "S " prefix
+            memmove(dest, dest + 2, strlen(dest) - 1); // Shift by 2 positions, keep null terminator
+        }
+    }
+    else if (lineName[0] == 'S' && (lineName[1] == '\0' || lineName[1] == ' ' || (lineName[1] >= '0' && lineName[1] <= '9')))
+    {
+        // S line (S, S1, S2, etc.) - clean up destination
+        char* dest = tempDepartures[tempCount].destination;
+        if (strncmp(dest, "S+U ", 4) == 0)
+        {
+            // Replace "S+U " with "U "
+            memmove(dest, dest + 2, strlen(dest) - 1); // Shift by 2 positions, keep null terminator
+        }
+        else if (strncmp(dest, "S ", 2) == 0)
+        {
+            // Remove "S " prefix
+            memmove(dest, dest + 2, strlen(dest) - 1); // Shift by 2 positions, keep null terminator
+        }
+    }
+
+    // Shorten common words in destination (while still UTF-8)
+    shortenDestination(tempDepartures[tempCount].destination);
+
+    // Initialize platform field
+    tempDepartures[tempCount].platform[0] = '\0';
+
+    // Extract platform/track information
+    const char *platform = depJson["platform"].as<const char*>();
+    if (platform && strlen(platform) > 0)
+    {
+        // Parse platform: if contains space (e.g., "Gleis 12"), use part after space
+        // Otherwise use entire string (e.g., "12", "A", "1a")
+        const char *platformDisplay = platform;
+        const char *spacePos = strchr(platform, ' ');
+        if (spacePos != nullptr)
+        {
+            platformDisplay = spacePos + 1;  // Skip "Gleis " prefix
+        }
+
+        // Truncate to 3 characters if longer
+        strncpy(tempDepartures[tempCount].platform, platformDisplay, 3);
+        tempDepartures[tempCount].platform[3] = '\0';
+
+        if (config.debugMode && strlen(platformDisplay) > 3)
+        {
+            char warnMsg[64];
+            snprintf(warnMsg, sizeof(warnMsg),
+                     "BVG: Platform truncated '%s' -> '%.3s'",
+                     platformDisplay, platformDisplay);
+            debugPrintln(warnMsg);
+        }
+    }
 
     // Parse ISO 8601 timestamp from "when" field
     const char *when = depJson["when"].as<const char*>();
@@ -344,13 +390,15 @@ void BvgAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartures,
 
     tempDepartures[tempCount].eta = etaSeconds / 60;
 
-    // Debug log for first few departures
-    if (tempCount < 16)
+    // Debug log for first few departures (only if debug mode enabled)
+    if (config.debugMode && tempCount < 3)
     {
         logTimestamp();
         char debugMsg[128];
-        snprintf(debugMsg, sizeof(debugMsg), "BVG API: Line %s to %s - ETA: %d min (when: %s, now: %ld, dep: %ld)",
-                 lineName, direction, tempDepartures[tempCount].eta, when, (long)now, (long)tempDepartures[tempCount].departureTime);
+        snprintf(debugMsg, sizeof(debugMsg), "BVG: Line %s to %s - ETA:%d (Plt:%s, when:%s)",
+                 lineName, direction, tempDepartures[tempCount].eta,
+                 tempDepartures[tempCount].platform[0] ? tempDepartures[tempCount].platform : "-",
+                 when);
         debugPrintln(debugMsg);
     }
 

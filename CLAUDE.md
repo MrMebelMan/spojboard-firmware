@@ -11,16 +11,17 @@ ESP32-based transit departure display that fetches real-time data from multiple 
 **SPOJ** = **S**mart **P**anel for **O**nward **J**ourneys (also "spoj" = connection/service in Czech)
 
 **Key Features:**
-- Multi-city support: Prague (Golemio API) and Berlin (BVG API)
-- Standalone operation with direct API access
+- Multi-source support: Prague (Golemio API), Berlin (BVG API), and MQTT (Home Assistant integration)
+- Standalone operation with direct API access or MQTT request/response pattern
+- MQTT integration with configurable JSON field mappings and dual ETA modes (timestamp/pre-calculated)
 - WiFi captive portal for configuration
 - Persistent settings in ESP32 NVS flash with backward compatibility migration
 - Custom 8-bit ISO-8859-2 GFXfonts with full character support (Czech, German, etc.)
 - UTF-8 to ISO-8859-2 automatic conversion for API data
-- Configurable minimum departure time filter
+- Configurable minimum departure time filter with dual filtering (server-side + device-side recalculation)
 - Position-based wildcard pattern matching for line colors
 - Demo mode with customizable sample departures
-- Web-based configuration interface with city selector
+- Web-based configuration interface with data source selector
 - GitHub-based OTA firmware updates with user confirmation
 
 ## Build & Development Commands
@@ -81,6 +82,7 @@ src/
 │   ├── TransitAPI.h                 # Abstract base class for transit APIs
 │   ├── GolemioAPI.h/cpp             # Prague Golemio API client
 │   ├── BvgAPI.h/cpp                 # Berlin BVG API client
+│   ├── MqttAPI.h/cpp                # MQTT API client with configurable field mappings
 │   ├── DepartureData.h/cpp          # Data structures & utilities
 ├── network/
 │   ├── WiFiManager.h/cpp            # WiFi connection & AP mode
@@ -169,7 +171,7 @@ HUB75 matrix pins are hardcoded for Adafruit MatrixPortal ESP32-S3 (lines 25-40)
 - Abstract base class: `TransitAPI` defines common interface for all transit APIs
 - `APIResult` struct: departures array, count, stop name, error status
 - `APIStatusCallback`: callback function type for status updates
-- Runtime API selection: main.cpp selects GolemioAPI or BvgAPI based on `config.city`
+- Runtime API selection: main.cpp selects GolemioAPI, BvgAPI, or MqttAPI based on `config.city`
 
 ### Departure Caching and Display Logic
 
@@ -238,31 +240,45 @@ HUB75 matrix pins are hardcoded for Adafruit MatrixPortal ESP32-S3 (lines 25-40)
 - JSON buffer: 24KB (BVG responses are verbose, ~1.7KB per departure)
 - Find IDs at: https://v6.bvg.transport.rest/ (use /locations endpoint)
 
+### MQTT API (Home Assistant / Custom)
+- Endpoint: User-configurable MQTT broker (e.g., `homeassistant.local:1883`)
+- Authentication: Optional username/password
+- Request/Response pattern: SpojBoard publishes `"request"` to request topic, receives JSON on response topic
+- Configuration fields: `config.mqttBroker`, `config.mqttPort`, `config.mqttUser`, `config.mqttPass`, `config.mqttRequestTopic`, `config.mqttResponseTopic`
+- **Configurable JSON field mappings**: All field names customizable via web interface (line, destination, ETA, timestamp, platform, AC flag)
+- **Dual ETA modes**:
+  - **Timestamp mode** (recommended): Server sends unix timestamps (`dep` field), device recalculates ETAs every 10s
+  - **ETA mode**: Server sends pre-calculated minutes (`eta` field), displayed as-is without recalculation
+- JSON buffer: 8KB
+- Timeout: 10 seconds for server response
+- No stop IDs required - server aggregates and filters departures
+- See `docs/MQTT.md` for complete integration guide with Home Assistant examples
+
 ### Multi-Stop Behavior
 - Multiple stops supported via comma separation (max 12 stops)
 - Each stop queried individually with separate API calls (1s delay between calls)
 - All departures collected, sorted by ETA, filtered by minimum departure time, then top N displayed
-- Applies to both Prague and Berlin APIs
+- Applies to Prague and Berlin APIs (not MQTT - server handles aggregation)
 
 ### Departure Data Structure
 ```cpp
 struct Departure {
     char line[8];           // Route short name
-    char destination[32];   // Trip headsign (with abbreviations applied for Prague)
+    char destination[32];   // Trip headsign (with abbreviations applied)
     int eta;                // Calculated from predicted/scheduled timestamp
-    bool hasAC;             // trip.is_air_conditioned (Prague only)
+    bool hasAC;             // trip.is_air_conditioned (configurable via MQTT JSON field)
     bool isDelayed;         // From delay field
     int delayMinutes;       // Delay in minutes
+    char platform[8];       // Platform/track number (stored but not currently displayed)
+    time_t departureTime;   // Unix timestamp for ETA recalculation (MQTT timestamp mode)
 }
 ```
 
-**Destination Abbreviations** (Prague only): Long Czech words are automatically shortened to fit display:
-- "Nádraží" → "Nádr." (uppercase)
-- "nádraží" → "nádr." (lowercase)
-- "Sídliště" → "Sídl."
-- "Nemocnice" → "Nem."
+**Destination Abbreviations**: Long words are automatically shortened to fit display:
+- **Czech (Prague)**: "Nádraží" → "Nádr.", "nádraží" → "nádr.", "Sídliště" → "Sídl.", "Nemocnice" → "Nem."
+- **German (Berlin)**: " Hauptbahnhof" → " Hbf", "Bahnhof" → "Bhf", "(Berlin)" → "(B)"
 
-Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to preserve diacritics. Berlin station names are displayed as-is from the API.
+Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to preserve diacritics.
 
 ## Hardware Constraints
 
@@ -294,21 +310,44 @@ Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to pres
 ## Configuration Storage
 
 NVS namespace: "transport"
+
+**General Settings:**
 - `wifiSsid` (String)
 - `wifiPass` (String)
-- `city` (String, 16 chars) - Transit city: "Prague" or "Berlin"
-- `pragueApiKey` (String, 300 chars) - Golemio API key for Prague
-- `pragueStopIds` (String, 128 chars) - Prague stop IDs (comma-separated)
-- `berlinStopIds` (String, 128 chars) - Berlin stop IDs (comma-separated)
+- `city` (String, 16 chars) - Data source: "Prague", "Berlin", or "MQTT"
+- `language` (String, 3 chars) - Language code (default: "en", future use for localization)
 - `refresh` (Int, seconds, 10-300)
 - `numDeps` (Int, 1-6)
-- `minDepTime` (Int, minutes, 0-30) - Filter out departures below this time
+- `minDepTime` (Int, minutes, 0-30) - Filter out departures below this time during ETA recalculation
 - `brightness` (Int, 0-255) - Display brightness level
 - `lineColorMap` (String, max 256 chars) - Custom line color mappings (format: "LINE=COLOR,LINE=COLOR,...")
   - Position-based wildcards: asterisks as position placeholders (e.g., "9*=CYAN", "4**=BLUE")
   - Falls back to hardcoded defaults if empty or no match
 - `debugMode` (Bool) - Enable telnet logging
+- `showPlatform` (Bool) - Display platform numbers (stored but not currently implemented)
 - `configured` (Bool)
+
+**Prague API Settings:**
+- `pragueApiKey` (String, 300 chars) - Golemio API key
+- `pragueStopIds` (String, 128 chars) - Stop IDs (comma-separated)
+
+**Berlin API Settings:**
+- `berlinStopIds` (String, 128 chars) - Stop IDs (comma-separated)
+
+**MQTT Settings:**
+- `mqttBroker` (String, 128 chars) - MQTT broker address (IP or hostname)
+- `mqttPort` (Int) - MQTT broker port (default: 1883)
+- `mqttUser` (String, 64 chars) - Optional username for broker authentication
+- `mqttPass` (String, 64 chars) - Optional password for broker authentication
+- `mqttRequestTopic` (String, 128 chars) - Topic where SpojBoard publishes requests
+- `mqttResponseTopic` (String, 128 chars) - Topic where SpojBoard subscribes for responses
+- `mqttUseTimestamps` (Bool) - ETA mode: false = pre-calculated minutes, true = unix timestamps
+- `mqttFieldLine` (String, 32 chars) - JSON field name for line number (default: "line")
+- `mqttFieldDest` (String, 32 chars) - JSON field name for destination (default: "dest")
+- `mqttFieldEta` (String, 32 chars) - JSON field name for ETA minutes (default: "eta")
+- `mqttFieldDep` (String, 32 chars) - JSON field name for departure timestamp (default: "dep")
+- `mqttFieldPlatform` (String, 32 chars) - JSON field name for platform (default: "plt")
+- `mqttFieldAc` (String, 32 chars) - JSON field name for AC flag (default: "ac")
 
 **Backward Compatibility Migration**:
 - Old `apiKey` field → `pragueApiKey`
@@ -316,9 +355,21 @@ NVS namespace: "transport"
 - Automatic migration on first load with new firmware
 - Old keys removed from NVS after migration
 
-Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, city "Prague", 60s refresh, 3 departures, 3min minimum departure time, brightness 90, empty lineColorMap (uses hardcoded defaults), debug mode disabled
+**Defaults:**
+- WiFi: From DEFAULT_WIFI_SSID/PASSWORD defines
+- Data source: "Prague"
+- Language: "en"
+- Refresh interval: 60s
+- Number of departures: 3
+- Minimum departure time: 3 minutes
+- Brightness: 90
+- Line color map: Empty (uses hardcoded defaults)
+- Debug mode: Disabled
+- Show platform: Disabled
+- MQTT use timestamps: True (timestamp mode)
+- MQTT field mappings: "line", "dest", "eta", "dep", "plt", "ac"
 
-**First-time setup (AP Mode)**: Only WiFi credentials required, city and stop IDs optional. Demo mode available before API configuration.
+**First-time setup (AP Mode)**: Only WiFi credentials required, data source and configuration optional. Demo mode available before API configuration.
 
 ## Time Handling
 

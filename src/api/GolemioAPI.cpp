@@ -231,7 +231,7 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
                 if (tempCount >= MAX_TEMP_DEPARTURES)
                     break;
 
-                parseDepartureObject(dep, tempDepartures, tempCount);
+                parseDepartureObject(dep, config, tempDepartures, tempCount);
             }
         }
 
@@ -250,7 +250,7 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
     }
 }
 
-void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount)
+void GolemioAPI::parseDepartureObject(JsonObject depJson, const Config &config, Departure *tempDepartures, int &tempCount)
 {
     // Route/Line info
     const char *line = depJson["route"]["short_name"];
@@ -314,6 +314,45 @@ void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartu
     {
         tempDepartures[tempCount].isDelayed = false;
         tempDepartures[tempCount].delayMinutes = 0;
+    }
+
+    // Platform/track info (optional, from stop object)
+    tempDepartures[tempCount].platform[0] = '\0';  // Initialize empty
+
+    // Extract platform_code from stop object (nested in departure)
+    if (depJson.containsKey("stop") && depJson["stop"].containsKey("platform_code"))
+    {
+        const char *platformCode = depJson["stop"]["platform_code"];
+        if (platformCode && strlen(platformCode) > 0)
+        {
+            // Truncate to 3 characters if longer
+            strncpy(tempDepartures[tempCount].platform, platformCode, 3);
+            tempDepartures[tempCount].platform[3] = '\0';
+
+            if (config.debugMode && strlen(platformCode) > 3)
+            {
+                char warnMsg[64];
+                snprintf(warnMsg, sizeof(warnMsg),
+                         "Golemio: Platform truncated '%s' -> '%.3s'",
+                         platformCode, platformCode);
+                debugPrintln(warnMsg);
+            }
+        }
+    }
+
+    // Debug log for first few departures (only if debug mode enabled)
+    if (config.debugMode && tempCount < 3)
+    {
+        logTimestamp();
+        char debugMsg[128];
+        snprintf(debugMsg, sizeof(debugMsg), "Golemio: Line %s to %s - ETA:%d (Plt:%s, AC:%d, Delay:%d)",
+                 tempDepartures[tempCount].line,
+                 tempDepartures[tempCount].destination,
+                 tempDepartures[tempCount].eta,
+                 tempDepartures[tempCount].platform[0] ? tempDepartures[tempCount].platform : "-",
+                 tempDepartures[tempCount].hasAC ? 1 : 0,
+                 tempDepartures[tempCount].delayMinutes);
+        debugPrintln(debugMsg);
     }
 
     tempCount++;
