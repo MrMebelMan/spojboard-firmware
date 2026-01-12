@@ -10,6 +10,7 @@
 extern const GFXfont DepartureMono_Regular4pt8b;
 extern const GFXfont DepartureMono_Regular5pt8b;
 extern const GFXfont DepartureMono_Condensed5pt8b;
+extern const GFXfont DepartureWeather4pt8b;  // Weather icon font
 
 // Scroll timing constants
 static const int SCROLL_INTERVAL_MS = 300;       // 500ms between scroll steps
@@ -100,6 +101,12 @@ public:
     MatrixPanel_I2S_DMA* getDisplay() { return display; }
 
     /**
+     * Set weather data pointer for display rendering
+     * @param data Pointer to WeatherData struct
+     */
+    void setWeatherData(const struct WeatherData* data) { weatherData = data; }
+
+    /**
      * Draw demo mode display (repurposed from drawFontTest)
      * Shows sample departure data for customization testing
      * @param departures Array of sample departures to display
@@ -128,6 +135,10 @@ private:
     const GFXfont* fontSmall;
     const GFXfont* fontMedium;
     const GFXfont* fontCondensed;
+    const GFXfont* fontWeather;  // Weather icon font
+
+    // Weather data pointer
+    const struct WeatherData* weatherData;
 
     // Scroll state for each departure row (max 3 rows)
     ScrollState scrollState[3];
@@ -143,6 +154,11 @@ private:
     void drawDateTime();
     void drawAPMode(const char* ssid, const char* password);
     void redrawDestination(int row, const Departure& dep);
+
+    // Weather helper functions
+    char mapWeatherCodeToIcon(int wmoCode);
+    uint16_t getWeatherColor(int wmoCode);
+    uint16_t getTemperatureColor(int temperature);
 };
 
 #endif // DISPLAYMANAGER_H

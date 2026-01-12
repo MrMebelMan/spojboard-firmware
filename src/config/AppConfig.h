@@ -92,6 +92,13 @@ struct Config
     bool debugMode;         // Enable telnet logging and verbose output
     bool showPlatform;      // Display platform/track between destination and ETA
     bool scrollEnabled;     // Enable scrolling for long destination names (default: off)
+
+    // Weather configuration
+    bool weatherEnabled;        // Enable weather display
+    float weatherLatitude;      // GPS latitude (e.g., 50.0755 for Prague)
+    float weatherLongitude;     // GPS longitude (e.g., 14.4378 for Prague)
+    int weatherRefreshInterval; // Minutes between weather fetches (default: 15)
+
     bool configured;
 };
 

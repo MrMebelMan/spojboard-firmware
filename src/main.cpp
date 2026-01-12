@@ -10,6 +10,7 @@
 #include "api/GolemioAPI.h"
 #include "api/BvgAPI.h"
 #include "api/MqttAPI.h"
+#include "api/WeatherAPI.h"
 #include "display/DisplayManager.h"
 #include "network/WiFiManager.h"
 #include "network/CaptivePortal.h"
@@ -24,10 +25,11 @@ DisplayManager displayManager;
 WiFiManager wifiManager;
 CaptivePortal captivePortal;
 ConfigWebServer webServer;
-GolemioAPI golemioAPI;  // Prague transit API
-BvgAPI bvgAPI;          // Berlin transit API
-MqttAPI mqttAPI;        // MQTT transit API
-TransitAPI* transitAPI = nullptr;  // Pointer to active API (selected at runtime)
+GolemioAPI golemioAPI; // Prague transit API
+BvgAPI bvgAPI; // Berlin transit API
+MqttAPI mqttAPI; // MQTT transit API
+TransitAPI* transitAPI = nullptr; // Pointer to active API (selected at runtime)
+WeatherAPI weatherAPI; // Weather forecast API
 
 // ============================================================================
 // Configuration Storage (structure defined in config/AppConfig.h)
@@ -45,12 +47,14 @@ int departureCount = 0;
 // ============================================================================
 unsigned long lastApiCall = 0;
 unsigned long lastDisplayUpdate = 0;
-unsigned long lastEtaRecalc = 0;  // For 10-second ETA recalculation
+unsigned long lastEtaRecalc = 0; // For 10-second ETA recalculation
+unsigned long lastWeatherCall = 0; // For weather API polling
 bool needsDisplayUpdate = false;
 bool apiError = false;
 char apiErrorMsg[64] = "";
 char stopName[64] = "";
-bool demoModeActive = false;  // Demo mode flag - stops API polling and display updates
+bool demoModeActive = false; // Demo mode flag - stops API polling and display updates
+WeatherData weatherData = {}; // Global weather state
 
 // Network layer is now in network/ modules:
 // - WiFiManager: WiFi connection and AP mode
@@ -124,8 +128,12 @@ void recalculateETAs()
         {
             logTimestamp();
             char sortMsg[96];
-            snprintf(sortMsg, sizeof(sortMsg), "  After sort [%d]: Line %s, ETA=%d min",
-                     i, departures[i].line, departures[i].eta);
+            snprintf(sortMsg,
+                     sizeof(sortMsg),
+                     "  After sort [%d]: Line %s, ETA=%d min",
+                     i,
+                     departures[i].line,
+                     departures[i].eta);
             debugPrintln(sortMsg);
         }
     }
@@ -158,10 +166,8 @@ bool isCityConfigured()
     else if (strcmp(config.city, "MQTT") == 0)
     {
         // MQTT needs broker, topics, and field mappings
-        return strlen(config.mqttBroker) > 0 &&
-               strlen(config.mqttRequestTopic) > 0 &&
-               strlen(config.mqttResponseTopic) > 0 &&
-               strlen(config.mqttFieldLine) > 0 &&
+        return strlen(config.mqttBroker) > 0 && strlen(config.mqttRequestTopic) > 0 &&
+               strlen(config.mqttResponseTopic) > 0 && strlen(config.mqttFieldLine) > 0 &&
                strlen(config.mqttFieldDestination) > 0;
     }
     else
@@ -203,10 +209,49 @@ void fetchDepartures()
 }
 
 // ============================================================================
+// Weather API Fetch Wrapper
+// ============================================================================
+
+void fetchWeather()
+{
+    if (!wifiManager.isConnected() || !config.weatherEnabled)
+    {
+        return;
+    }
+
+    // Validate coordinates (non-zero)
+    if (config.weatherLatitude == 0.0 && config.weatherLongitude == 0.0)
+    {
+        return;
+    }
+
+    logTimestamp();
+    debugPrintln("Weather: Fetching forecast...");
+
+    weatherData = weatherAPI.fetchWeather(config.weatherLatitude, config.weatherLongitude);
+
+    if (weatherData.hasError)
+    {
+        logTimestamp();
+        debugPrint("Weather: Error - ");
+        debugPrintln(weatherData.errorMsg);
+    }
+    else
+    {
+        logTimestamp();
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Weather: %d°C, code %d", weatherData.temperature, weatherData.weatherCode);
+        debugPrintln(msg);
+    }
+
+    needsDisplayUpdate = true;
+}
+
+// ============================================================================
 // Callback Functions for ConfigWebServer
 // ============================================================================
 
-void onConfigSave(const Config &newConfig, bool wifiChanged)
+void onConfigSave(const Config& newConfig, bool wifiChanged)
 {
     // Update config
     config = newConfig;
@@ -262,7 +307,7 @@ void onDemoStop()
 {
     // Exit demo mode: resume normal operation
     demoModeActive = false;
-    lastApiCall = 0;  // Force immediate API refresh
+    lastApiCall = 0; // Force immediate API refresh
 
     logTimestamp();
     debugPrintln("Demo mode deactivated - resuming normal operation");
@@ -366,6 +411,9 @@ void setup()
         debugPrintln("Web server failed to start!");
     }
 
+    // Pass weather data pointer to display manager
+    displayManager.setWeatherData(&weatherData);
+
     // Setup captive portal detection handlers
     if (wifiManager.isAPMode())
     {
@@ -397,6 +445,13 @@ void setup()
             fetchDepartures();
             lastApiCall = millis(); // Prevent immediate second call in loop()
         }
+
+        // Initial weather call if configured
+        if (config.weatherEnabled && config.weatherLatitude != 0.0 && config.weatherLongitude != 0.0)
+        {
+            fetchWeather();
+            lastWeatherCall = millis();
+        }
     }
 
     needsDisplayUpdate = true;
@@ -426,10 +481,15 @@ void loop()
 
     // Update web server state for status display
     webServer.updateState(&config,
-                          wifiManager.isConnected(), wifiManager.isAPMode(),
-                          wifiManager.getAPSSID(), wifiManager.getAPPassword(), wifiManager.getAPClientCount(),
-                          apiError, apiErrorMsg,
-                          departureCount, stopName);
+                          wifiManager.isConnected(),
+                          wifiManager.isAPMode(),
+                          wifiManager.getAPSSID(),
+                          wifiManager.getAPPassword(),
+                          wifiManager.getAPClientCount(),
+                          apiError,
+                          apiErrorMsg,
+                          departureCount,
+                          stopName);
 
     // Skip WiFi monitoring and API calls in AP mode
     if (wifiManager.isAPMode())
@@ -444,11 +504,17 @@ void loop()
         if (needsDisplayUpdate)
         {
             needsDisplayUpdate = false;
-            displayManager.updateDisplay(departures, departureCount, config.numDepartures,
-                                         wifiManager.isConnected(), wifiManager.isAPMode(),
-                                         wifiManager.getAPSSID(), wifiManager.getAPPassword(),
-                                         apiError, apiErrorMsg,
-                                         stopName, isCityConfigured(),
+            displayManager.updateDisplay(departures,
+                                         departureCount,
+                                         config.numDepartures,
+                                         wifiManager.isConnected(),
+                                         wifiManager.isAPMode(),
+                                         wifiManager.getAPSSID(),
+                                         wifiManager.getAPPassword(),
+                                         apiError,
+                                         apiErrorMsg,
+                                         stopName,
+                                         isCityConfigured(),
                                          demoModeActive);
         }
 
@@ -508,17 +574,37 @@ void loop()
                 recalculateETAs();
             }
         }
+
+        // Periodic weather calls (only when connected and enabled)
+        if (wifiManager.isConnected() && config.weatherEnabled && config.weatherLatitude != 0.0 &&
+            config.weatherLongitude != 0.0)
+        {
+            unsigned long now = millis();
+            unsigned long weatherInterval = (unsigned long)config.weatherRefreshInterval * 60000; // Minutes to ms
+
+            if (now - lastWeatherCall >= weatherInterval || lastWeatherCall == 0)
+            {
+                lastWeatherCall = now;
+                fetchWeather();
+            }
+        }
     }
 
     // Update display
     if (needsDisplayUpdate)
     {
         needsDisplayUpdate = false;
-        displayManager.updateDisplay(departures, departureCount, config.numDepartures,
-                                     wifiManager.isConnected(), wifiManager.isAPMode(),
-                                     wifiManager.getAPSSID(), wifiManager.getAPPassword(),
-                                     apiError, apiErrorMsg,
-                                     stopName, isCityConfigured(),
+        displayManager.updateDisplay(departures,
+                                     departureCount,
+                                     config.numDepartures,
+                                     wifiManager.isConnected(),
+                                     wifiManager.isAPMode(),
+                                     wifiManager.getAPSSID(),
+                                     wifiManager.getAPPassword(),
+                                     apiError,
+                                     apiErrorMsg,
+                                     stopName,
+                                     isCityConfigured(),
                                      demoModeActive);
     }
 
@@ -540,7 +626,9 @@ void loop()
     {
         lastStatusLog = millis();
         char statusMsg[128];
-        snprintf(statusMsg, sizeof(statusMsg), "STATUS: WiFi=%s | AP=%s | Deps=%d | Heap=%u",
+        snprintf(statusMsg,
+                 sizeof(statusMsg),
+                 "STATUS: WiFi=%s | AP=%s | Deps=%d | Heap=%u",
                  wifiManager.isConnected() ? "OK" : "FAIL",
                  wifiManager.isAPMode() ? "ON" : "OFF",
                  departureCount,

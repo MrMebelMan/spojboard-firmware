@@ -8,6 +8,10 @@
 #include "../fonts/DepartureMono4pt8b.h"
 #include "../fonts/DepartureMono5pt8b.h"
 #include "../fonts/DepartureMonoCondensed5pt8b.h"
+#include "../fonts/DepartureWeather4pt8b.h"
+
+// Weather API for data structure
+#include "../api/WeatherAPI.h"
 
 DisplayManager::DisplayManager()
     : display(nullptr), isDrawing(false), config(nullptr),
@@ -17,6 +21,8 @@ DisplayManager::DisplayManager()
     fontSmall = &DepartureMono_Regular4pt8b;
     fontMedium = &DepartureMono_Regular5pt8b;
     fontCondensed = &DepartureMono_Condensed5pt8b;
+    fontWeather = &DepartureWeather_Regular4pt8b; // TODO: Change to &DepartureWeather4pt8b when font is created
+    weatherData = nullptr;
 
     // Initialize scroll state for all rows
     for (int i = 0; i < 3; i++)
@@ -24,8 +30,8 @@ DisplayManager::DisplayManager()
         scrollState[i].offset = 0;
         scrollState[i].maxOffset = 0;
         scrollState[i].needsScroll = false;
-        scrollState[i].paused = true;     // Start paused
-        scrollState[i].atStart = true;    // At beginning
+        scrollState[i].paused = true;  // Start paused
+        scrollState[i].atStart = true; // At beginning
         scrollState[i].lastUpdate = 0;
         scrollState[i].cycleCount = 0;
     }
@@ -105,7 +111,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     // 1-3 characters: medium font (6px/char)
     // 4 characters: condensed font (4px/char)
     int lineLen = strlen(lineConverted);
-    const GFXfont* lineFont = (lineLen >= 4) ? fontCondensed : fontMedium;
+    const GFXfont *lineFont = (lineLen >= 4) ? fontCondensed : fontMedium;
     display->setFont(lineFont);
 
     // Center the line number text within the background rectangle
@@ -141,15 +147,15 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
         int platformLen = strlen(dep.platform);
         if (platformLen >= 3)
         {
-            platformReservedPx = 15;  // 3 condensed chars + buffer
+            platformReservedPx = 15; // 3 condensed chars + buffer
         }
         else if (platformLen == 2)
         {
-            platformReservedPx = 11;  // 2 condensed chars + buffer
+            platformReservedPx = 11; // 2 condensed chars + buffer
         }
         else
         {
-            platformReservedPx = 9;   // 1 medium char + buffer
+            platformReservedPx = 9; // 1 medium char + buffer
         }
     }
 
@@ -168,7 +174,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     int availableSpace = spaceCalcEta - destX - platformReservedPx;
 
     // Font selection based on destination length and available space
-    const GFXfont* destFont;
+    const GFXfont *destFont;
     int maxChars;
 
     // Thresholds: fontMedium @ 6px/char, fontCondensed @ 4px/char
@@ -181,18 +187,20 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     {
         // Short destination - use regular font
         destFont = fontMedium;
-        maxChars = availableSpace / 6;  // 6px per char
+        maxChars = availableSpace / 6; // 6px per char
     }
     else
     {
         // Long destination - use condensed font
         destFont = fontCondensed;
-        maxChars = availableSpace / 4 - 1;  // 4px per char, -1 for padding
+        maxChars = availableSpace / 4 - 1; // 4px per char, -1 for padding
     }
 
     // Safety cap: prevent buffer overflow
-    if (maxChars > 63) maxChars = 63;  // destTrunc buffer size - 1
-    if (maxChars < 1) maxChars = 1;     // Ensure at least 1 char
+    if (maxChars > 63)
+        maxChars = 63; // destTrunc buffer size - 1
+    if (maxChars < 1)
+        maxChars = 1; // Ensure at least 1 char
 
     display->setFont(destFont);
     display->setCursor(destX, y + 7);
@@ -246,7 +254,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
 
         // Select font based on platform length (same logic as line numbers)
         int platformLen = strlen(platformConverted);
-        const GFXfont* platformFont = (platformLen >= 2) ? fontCondensed : fontMedium;
+        const GFXfont *platformFont = (platformLen >= 2) ? fontCondensed : fontMedium;
         display->setFont(platformFont);
 
         // Get actual text bounds for proper alignment (like line number centering)
@@ -258,7 +266,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
         // Account for font's left bearing offset (px1) for precise positioning
         int platformX = 111 - pw - 3 - px1;
 
-        display->setTextColor(COLOR_CYAN);  // Match AC indicator
+        display->setTextColor(COLOR_CYAN); // Match AC indicator
         display->setCursor(platformX, y + 7);
         display->print(platformConverted);
     }
@@ -326,11 +334,11 @@ void DisplayManager::drawDateTime()
     display->setTextColor(COLOR_WHITE);
 
     // Get language setting (default to "en" if config not set)
-    const char* lang = (config && config->language[0]) ? config->language : "en";
+    const char *lang = (config && config->language[0]) ? config->language : "en";
 
     // Day of week (localized)
     char dayStr[8];
-    const char* localDay = getLocalizedDay(timeinfo.tm_wday, lang);
+    const char *localDay = getLocalizedDay(timeinfo.tm_wday, lang);
     snprintf(dayStr, sizeof(dayStr), "%s", localDay);
     utf8tocp(dayStr);
     display->setCursor(2, y + 7);
@@ -338,11 +346,53 @@ void DisplayManager::drawDateTime()
 
     // Date (localized month)
     char dateStr[10];
-    const char* localMonth = getLocalizedMonth(timeinfo.tm_mon, lang);
+    const char *localMonth = getLocalizedMonth(timeinfo.tm_mon, lang);
     snprintf(dateStr, sizeof(dateStr), "%s %02d", localMonth, timeinfo.tm_mday);
     utf8tocp(dateStr);
     display->setCursor(26, y + 7);
     display->print(dateStr);
+
+    // Weather (only if enabled and valid data)
+    if (config && config->weatherEnabled && weatherData && !weatherData->hasError)
+    {
+        time_t now;
+        time(&now);
+
+        // Only show if data is fresh (< 30 min old)
+        if (difftime(now, weatherData->timestamp) < 1800)
+        {
+            // Switch to weather font
+            display->setFont(fontWeather); // DepartureWeather4pt8b
+
+            // Get icon character and color for this weather code
+            char iconCode = mapWeatherCodeToIcon(weatherData->weatherCode);
+            uint16_t iconColor = getWeatherColor(weatherData->weatherCode);
+
+            // Draw icon at fixed left position (X=65, panel 2 start)
+            display->setTextColor(iconColor);
+            display->setCursor(65, y + 7);
+            display->print(iconCode); // Letter 'a'-'t' renders as weather icon
+
+            // Draw temperature right-aligned to degree symbol at X=93
+            // with its own color
+            display->setTextColor(getTemperatureColor(weatherData->temperature));
+            char tempStr[8];
+            snprintf(tempStr, sizeof(tempStr), "%d\xB0", weatherData->temperature);
+
+            // Calculate text width and right-align to degree anchor (X=93)
+            int16_t x1, y1;
+            uint16_t w, h;
+            display->getTextBounds(tempStr, 0, 0, &x1, &y1, &w, &h);
+            int tempX = 88 - w + x1; // Right-align to X=93, compensate for x1 offset
+
+            display->setCursor(tempX, y + 7);
+            display->print(tempStr); // Temperature with degree symbol
+
+            // Switch back to small font for time display
+            display->setFont(fontSmall);
+            display->setTextColor(COLOR_WHITE);
+        }
+    }
 
     // Time
     char timeStr[6];
@@ -568,7 +618,7 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
     isDrawing = false;
 }
 
-void DisplayManager::drawDemo(const Departure* departures, int departureCount, const char* stopName)
+void DisplayManager::drawDemo(const Departure *departures, int departureCount, const char *stopName)
 {
     if (isDrawing)
         return;
@@ -599,8 +649,8 @@ void DisplayManager::resetScroll()
         scrollState[i].offset = 0;
         scrollState[i].maxOffset = 0;
         scrollState[i].needsScroll = false;
-        scrollState[i].paused = true;     // Start paused
-        scrollState[i].atStart = true;    // At beginning
+        scrollState[i].paused = true;  // Start paused
+        scrollState[i].atStart = true; // At beginning
         scrollState[i].lastUpdate = millis();
         scrollState[i].cycleCount = 0;
     }
@@ -621,7 +671,8 @@ bool DisplayManager::updateScroll()
 
     // Determine how many rows to consider
     int rowsToCheck = (currentDepartureCount < currentNumToDisplay) ? currentDepartureCount : currentNumToDisplay;
-    if (rowsToCheck > 3) rowsToCheck = 3;
+    if (rowsToCheck > 3)
+        rowsToCheck = 3;
 
     // Process only ONE row per call - round-robin through rows
     // Use lastScrollTick to track which row to check next
@@ -631,7 +682,7 @@ bool DisplayManager::updateScroll()
     for (int attempts = 0; attempts < rowsToCheck; attempts++)
     {
         int row = currentRow;
-        currentRow = (currentRow + 1) % rowsToCheck;  // Move to next row for next call
+        currentRow = (currentRow + 1) % rowsToCheck; // Move to next row for next call
 
         if (!scrollState[row].needsScroll)
             continue;
@@ -660,15 +711,15 @@ bool DisplayManager::updateScroll()
 
                     // Always reset to start position after finishing a cycle
                     scrollState[row].offset = 0;
-                    scrollState[row].paused = true;   // Pause at start (forever if max cycles hit)
+                    scrollState[row].paused = true; // Pause at start (forever if max cycles hit)
                     scrollState[row].atStart = true;
 
                     // Redraw at position 0
                     redrawDestination(row, currentDepartures[row]);
-                    return true;  // Only process one row per call
+                    return true; // Only process one row per call
                 }
             }
-            continue;  // Still paused, try next row
+            continue; // Still paused, try next row
         }
 
         // Check if it's time for the next scroll step
@@ -685,19 +736,19 @@ bool DisplayManager::updateScroll()
                 // At end - pause, then reset to beginning
                 scrollState[row].offset = scrollState[row].maxOffset;
                 scrollState[row].paused = true;
-                scrollState[row].atStart = false;  // At end
+                scrollState[row].atStart = false; // At end
             }
 
             // Redraw just this row's destination
             redrawDestination(row, currentDepartures[row]);
-            return true;  // Only process one row per call
+            return true; // Only process one row per call
         }
     }
 
     return false;
 }
 
-void DisplayManager::redrawDestination(int row, const Departure& dep)
+void DisplayManager::redrawDestination(int row, const Departure &dep)
 {
     if (row < 0 || row >= 3 || !display)
         return;
@@ -742,7 +793,7 @@ void DisplayManager::redrawDestination(int row, const Departure& dep)
 
     // Determine font and maxChars (same logic as drawDeparture)
     int destLen = strlen(destConverted);
-    const GFXfont* destFont;
+    const GFXfont *destFont;
     int maxChars;
 
     int mediumThreshold = platformReservedPx > 0 ? 12 : 14;
@@ -756,11 +807,13 @@ void DisplayManager::redrawDestination(int row, const Departure& dep)
     else
     {
         destFont = fontCondensed;
-        maxChars = availableSpace / 4 - 1;  // -1 for padding
+        maxChars = availableSpace / 4 - 1; // -1 for padding
     }
 
-    if (maxChars > 63) maxChars = 63;
-    if (maxChars < 1) maxChars = 1;
+    if (maxChars > 63)
+        maxChars = 63;
+    if (maxChars < 1)
+        maxChars = 1;
 
     // Clear the destination area (from destX to just before platform/ETA)
     // Clear 9 pixels: 8 for the row + 1 below baseline for descenders (y, g, p, q, j)
@@ -781,4 +834,58 @@ void DisplayManager::redrawDestination(int row, const Departure& dep)
     strncpy(destTrunc, destConverted + scrollOffset, maxChars);
     destTrunc[maxChars] = '\0';
     display->print(destTrunc);
+}
+
+// ============================================================================
+// Weather Helper Functions
+// ============================================================================
+
+char DisplayManager::mapWeatherCodeToIcon(int wmoCode)
+{
+    // Map WMO weather codes to weather font characters
+    // WMO codes: https://www.noaa.gov/weather
+    if (wmoCode == 0)
+        return 'a'; // Clear sky → sun
+    if (wmoCode <= 3)
+        return 'b'; // Partly cloudy/cloudy
+    if (wmoCode >= 45 && wmoCode <= 48)
+        return 'f'; // Fog
+    if (wmoCode >= 51 && wmoCode <= 57)
+        return 'g'; // Drizzle/light rain
+    if (wmoCode >= 61 && wmoCode <= 67)
+        return 'd'; // Rain
+    if (wmoCode >= 71 && wmoCode <= 86)
+        return 'e'; // Snow/sleet
+    if (wmoCode >= 95)
+        return 't'; // Thunderstorm
+    return 'c';     // Default: cloudy
+}
+
+uint16_t DisplayManager::getWeatherColor(int wmoCode)
+{
+    // Color coding by weather condition
+    if (wmoCode == 0)
+        return COLOR_YELLOW; // Sunny
+    if (wmoCode <= 3)
+        return COLOR_WHITE; // Cloudy
+    if (wmoCode >= 45 && wmoCode <= 48)
+        return COLOR_PURPLE; // Fog
+    if (wmoCode >= 51 && wmoCode <= 67)
+        return COLOR_CYAN; // Drizzle/Rain
+    if (wmoCode >= 71 && wmoCode <= 86)
+        return COLOR_BLUE; // Snow
+    if (wmoCode >= 95)
+        return COLOR_RED; // Thunderstorm
+    return COLOR_WHITE;   // Default
+}
+
+uint16_t DisplayManager::getTemperatureColor(int temperature)
+{
+    if (temperature > 25)
+        return COLOR_RED; // Hot
+    if (temperature > 16)
+        return COLOR_YELLOW; // Warm
+    if (temperature < 8)
+        return COLOR_BLUE; // Cold
+    return COLOR_WHITE;    // Mild
 }

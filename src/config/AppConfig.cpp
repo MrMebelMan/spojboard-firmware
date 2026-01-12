@@ -67,6 +67,13 @@ void loadConfig(Config& config)
     config.debugMode = preferences.getBool("debugMode", false);  // Default: disabled
     config.showPlatform = preferences.getBool("showPlatform", false);  // Default: disabled
     config.scrollEnabled = preferences.getBool("scrollEnabled", false);  // Default: disabled
+
+    // Load weather configuration
+    config.weatherEnabled = preferences.getBool("weatherEnable", false);  // Default: disabled
+    config.weatherLatitude = preferences.getFloat("weatherLat", 50.0755);  // Default: Prague
+    config.weatherLongitude = preferences.getFloat("weatherLon", 14.4378); // Default: Prague
+    config.weatherRefreshInterval = preferences.getInt("weatherRefresh", 15);  // Default: 15 minutes
+
     config.configured = preferences.getBool("configured", false);
 
     preferences.end();
@@ -143,6 +150,13 @@ void saveConfig(const Config& config)
     preferences.putBool("debugMode", config.debugMode);
     preferences.putBool("showPlatform", config.showPlatform);
     preferences.putBool("scrollEnabled", config.scrollEnabled);
+
+    // Save weather configuration
+    preferences.putBool("weatherEnable", config.weatherEnabled);
+    preferences.putFloat("weatherLat", config.weatherLatitude);
+    preferences.putFloat("weatherLon", config.weatherLongitude);
+    preferences.putInt("weatherRefresh", config.weatherRefreshInterval);
+
     preferences.putBool("configured", true);
 
     preferences.end();

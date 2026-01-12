@@ -426,6 +426,45 @@ void ConfigWebServer::handleSave()
     // Scrolling checkbox (unchecked = not present in POST data)
     newConfig.scrollEnabled = server->hasArg("scrollenabled");
 
+    // Weather configuration
+    newConfig.weatherEnabled = server->hasArg("weather_enabled");
+
+    if (server->hasArg("weather_lat"))
+    {
+        String latStr = server->arg("weather_lat");
+        // Replace comma with dot for decimal separator (locale compatibility)
+        latStr.replace(",", ".");
+        newConfig.weatherLatitude = latStr.toFloat();
+        // Validate latitude range
+        if (newConfig.weatherLatitude < -90.0f)
+            newConfig.weatherLatitude = -90.0f;
+        if (newConfig.weatherLatitude > 90.0f)
+            newConfig.weatherLatitude = 90.0f;
+    }
+
+    if (server->hasArg("weather_lon"))
+    {
+        String lonStr = server->arg("weather_lon");
+        // Replace comma with dot for decimal separator (locale compatibility)
+        lonStr.replace(",", ".");
+        newConfig.weatherLongitude = lonStr.toFloat();
+        // Validate longitude range
+        if (newConfig.weatherLongitude < -180.0f)
+            newConfig.weatherLongitude = -180.0f;
+        if (newConfig.weatherLongitude > 180.0f)
+            newConfig.weatherLongitude = 180.0f;
+    }
+
+    if (server->hasArg("weather_refresh"))
+    {
+        newConfig.weatherRefreshInterval = server->arg("weather_refresh").toInt();
+        // Clamp to 10-60 minutes
+        if (newConfig.weatherRefreshInterval < 10)
+            newConfig.weatherRefreshInterval = 10;
+        if (newConfig.weatherRefreshInterval > 60)
+            newConfig.weatherRefreshInterval = 60;
+    }
+
     // Line color map (always update when not in AP mode to handle empty case)
     if (!apModeActive)
     {

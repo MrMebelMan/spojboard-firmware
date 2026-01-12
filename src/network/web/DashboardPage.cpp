@@ -266,6 +266,29 @@ String buildDashboardPage(
     html += "Scroll long destination names that don't fit on the display.</p></div>";
     html += "</div>";
 
+    // Weather section (only show when not in AP mode)
+    if (!apModeActive)
+    {
+        html += "<div class='card'>";
+        html += "<h2>Weather</h2>";
+        html += "<p class='info'>Display 3-hour weather forecast from Open-Meteo (free, no API key required).</p>";
+
+        html += "<div style='margin-top:10px;'><label><input type='checkbox' name='weather_enabled' " + String(config->weatherEnabled ? "checked" : "") + "> Enable Weather Display</label></div>";
+
+        html += "<div style='margin-top:10px;'><label>Latitude (e.g., 50.0755 for Prague)</label>";
+        html += "<input type='number' name='weather_lat' step='0.0001' value='" + String(config->weatherLatitude, 4) + "' placeholder='50.0755' style='width:100%;'></div>";
+
+        html += "<div style='margin-top:10px;'><label>Longitude (e.g., 14.4378 for Prague)</label>";
+        html += "<input type='number' name='weather_lon' step='0.0001' value='" + String(config->weatherLongitude, 4) + "' placeholder='14.4378' style='width:100%;'></div>";
+
+        html += "<div style='margin-top:10px;'><label>Refresh Interval (minutes, 10-60)</label>";
+        html += "<input type='number' name='weather_refresh' min='10' max='60' value='" + String(config->weatherRefreshInterval) + "' style='width:100%;'></div>";
+
+        html += "<p class='info' style='margin-top:10px; font-size:11px; color:#999;'>";
+        html += "Find coordinates: <a href='https://www.latlong.net/' target='_blank' style='color:#00d4ff;'>latlong.net</a></p>";
+        html += "</div>";
+    }
+
     // Line Colors section (only show when not in AP mode)
     if (!apModeActive)
     {
