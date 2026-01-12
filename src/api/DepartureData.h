@@ -12,7 +12,7 @@
 struct Departure
 {
     char line[8];         // Line number (e.g., "31", "A", "S9")
-    char destination[32]; // Destination/headsign
+    char destination[64]; // Destination/headsign
     int eta;              // Minutes until departure (recalculated from departureTime)
     time_t departureTime; // Unix timestamp of departure (from API)
     char platform[8];     // Platform/track (e.g., "D", "3", optional)

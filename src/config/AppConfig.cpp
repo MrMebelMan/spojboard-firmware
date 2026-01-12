@@ -66,6 +66,7 @@ void loadConfig(Config& config)
     strlcpy(config.language, preferences.getString("language", "en").c_str(), sizeof(config.language));  // Default: English
     config.debugMode = preferences.getBool("debugMode", false);  // Default: disabled
     config.showPlatform = preferences.getBool("showPlatform", false);  // Default: disabled
+    config.scrollEnabled = preferences.getBool("scrollEnabled", false);  // Default: disabled
     config.configured = preferences.getBool("configured", false);
 
     preferences.end();
@@ -141,6 +142,7 @@ void saveConfig(const Config& config)
     preferences.putString("language", config.language);
     preferences.putBool("debugMode", config.debugMode);
     preferences.putBool("showPlatform", config.showPlatform);
+    preferences.putBool("scrollEnabled", config.scrollEnabled);
     preferences.putBool("configured", true);
 
     preferences.end();

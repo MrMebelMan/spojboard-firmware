@@ -152,6 +152,12 @@ Transitions:
   - Located in `/fonts` directory
 - **UTF-8 Conversion**: API responses in UTF-8 are automatically converted to ISO-8859-2 encoding using in-place conversion (`utf8tocp()`)
 - **Non-blocking updates**: `isDrawing` flag prevents concurrent display access
+- **Optional destination scrolling**: Configurable via `config.scrollEnabled` (default: off)
+  - When enabled, destinations longer than `maxChars` scroll horizontally
+  - Per-row scroll state tracked in `ScrollState` struct (offset, maxOffset, needsScroll, pause state)
+  - Scroll timing: 300ms per step, 2s pause at start/end, max 1 cycle before stopping
+  - Only rows that need scrolling are updated - short destinations incur zero overhead
+  - `updateScroll()` called from main loop every 50ms, `redrawDestination()` redraws only the destination area
 
 ### Memory Management
 
@@ -325,6 +331,7 @@ NVS namespace: "transport"
   - Falls back to hardcoded defaults if empty or no match
 - `debugMode` (Bool) - Enable telnet logging
 - `showPlatform` (Bool) - Display platform numbers (stored but not currently implemented)
+- `scrollEnabled` (Bool) - Enable scrolling for long destination names (default: off)
 - `configured` (Bool)
 
 **Prague API Settings:**
@@ -366,6 +373,7 @@ NVS namespace: "transport"
 - Line color map: Empty (uses hardcoded defaults)
 - Debug mode: Disabled
 - Show platform: Disabled
+- Scroll enabled: Disabled
 - MQTT use timestamps: True (timestamp mode)
 - MQTT field mappings: "line", "dest", "eta", "dep", "plt", "ac"
 

@@ -91,6 +91,7 @@ struct Config
     char language[8];       // Display language: "en", "cs", "de"
     bool debugMode;         // Enable telnet logging and verbose output
     bool showPlatform;      // Display platform/track between destination and ETA
+    bool scrollEnabled;     // Enable scrolling for long destination names (default: off)
     bool configured;
 };
 

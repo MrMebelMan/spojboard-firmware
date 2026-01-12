@@ -261,6 +261,9 @@ String buildDashboardPage(
     html += "<p class='info' style='margin-top:2px; font-size:11px; color:#999;'>";
     html += "Display platform between destination and ETA (if available). ";
     html += "Reduces destination space by 2-3 characters.</p></div>";
+    html += "<div style='margin-top:10px;'><label><input type='checkbox' name='scrollenabled' " + String(config->scrollEnabled ? "checked" : "") + "> Enable Scrolling</label>";
+    html += "<p class='info' style='margin-top:2px; font-size:11px; color:#999;'>";
+    html += "Scroll long destination names that don't fit on the display.</p></div>";
     html += "</div>";
 
     // Line Colors section (only show when not in AP mode)

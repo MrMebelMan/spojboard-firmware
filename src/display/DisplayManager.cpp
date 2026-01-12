@@ -10,11 +10,25 @@
 #include "../fonts/DepartureMonoCondensed5pt8b.h"
 
 DisplayManager::DisplayManager()
-    : display(nullptr), isDrawing(false), config(nullptr)
+    : display(nullptr), isDrawing(false), config(nullptr),
+      lastScrollTick(0), currentDepartures(nullptr),
+      currentDepartureCount(0), currentNumToDisplay(0)
 {
     fontSmall = &DepartureMono_Regular4pt8b;
     fontMedium = &DepartureMono_Regular5pt8b;
     fontCondensed = &DepartureMono_Condensed5pt8b;
+
+    // Initialize scroll state for all rows
+    for (int i = 0; i < 3; i++)
+    {
+        scrollState[i].offset = 0;
+        scrollState[i].maxOffset = 0;
+        scrollState[i].needsScroll = false;
+        scrollState[i].paused = true;     // Start paused
+        scrollState[i].atStart = true;    // At beginning
+        scrollState[i].lastUpdate = 0;
+        scrollState[i].cycleCount = 0;
+    }
 }
 
 DisplayManager::~DisplayManager()
@@ -73,7 +87,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
 
     // Convert line number and destination to ISO-8859-2 (in-place)
     char lineConverted[8];
-    char destConverted[32];
+    char destConverted[64];
     strlcpy(lineConverted, dep.line, sizeof(lineConverted));
     strlcpy(destConverted, dep.destination, sizeof(destConverted));
     utf8tocp(lineConverted);
@@ -173,19 +187,46 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     {
         // Long destination - use condensed font
         destFont = fontCondensed;
-        maxChars = availableSpace / 4;  // 4px per char
+        maxChars = availableSpace / 4 - 1;  // 4px per char, -1 for padding
     }
 
     // Safety cap: prevent buffer overflow
-    if (maxChars > 23) maxChars = 23;  // destTrunc buffer size
+    if (maxChars > 63) maxChars = 63;  // destTrunc buffer size - 1
     if (maxChars < 1) maxChars = 1;     // Ensure at least 1 char
 
     display->setFont(destFont);
     display->setCursor(destX, y + 7);
 
-    // Truncate destination if needed
-    char destTrunc[24];
-    strncpy(destTrunc, destConverted, maxChars);
+    // Check if scrolling is needed for this row (only if enabled in config)
+    bool needsScroll = (config && config->scrollEnabled) && (destLen > maxChars);
+    char destTrunc[64];
+
+    if (needsScroll && row < 3)
+    {
+        // Set up scroll state for this row
+        scrollState[row].needsScroll = true;
+        scrollState[row].maxOffset = destLen - maxChars;
+
+        // Apply current scroll offset
+        int scrollOffset = scrollState[row].offset;
+        if (scrollOffset > scrollState[row].maxOffset)
+        {
+            scrollOffset = scrollState[row].maxOffset;
+        }
+
+        // Copy substring starting at scroll offset
+        strncpy(destTrunc, destConverted + scrollOffset, maxChars);
+    }
+    else
+    {
+        // No scrolling needed - reset state and show full text
+        if (row < 3)
+        {
+            scrollState[row].needsScroll = false;
+            scrollState[row].offset = 0;
+        }
+        strncpy(destTrunc, destConverted, maxChars);
+    }
     destTrunc[maxChars] = '\0';
     display->print(destTrunc);
 
@@ -427,6 +468,22 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
     if (isDrawing)
         return;
 
+    // Check if departure data has changed - reset scroll if so
+    bool dataChanged = (departures != currentDepartures) ||
+                       (departureCount != currentDepartureCount) ||
+                       (numToDisplay != currentNumToDisplay);
+
+    // Store current departures reference for scroll updates
+    currentDepartures = departures;
+    currentDepartureCount = departureCount;
+    currentNumToDisplay = numToDisplay;
+
+    // Reset scroll state when data changes
+    if (dataChanged)
+    {
+        resetScroll();
+    }
+
     isDrawing = true;
     display->clearScreen();
     delay(1);
@@ -533,4 +590,195 @@ void DisplayManager::drawDemo(const Departure* departures, int departureCount, c
     delay(1);
 
     isDrawing = false;
+}
+
+void DisplayManager::resetScroll()
+{
+    for (int i = 0; i < 3; i++)
+    {
+        scrollState[i].offset = 0;
+        scrollState[i].maxOffset = 0;
+        scrollState[i].needsScroll = false;
+        scrollState[i].paused = true;     // Start paused
+        scrollState[i].atStart = true;    // At beginning
+        scrollState[i].lastUpdate = millis();
+        scrollState[i].cycleCount = 0;
+    }
+    lastScrollTick = millis();
+}
+
+bool DisplayManager::updateScroll()
+{
+    // Don't update if we're in the middle of a full redraw
+    if (isDrawing || !display)
+        return false;
+
+    // Check if we have departure data to scroll
+    if (!currentDepartures || currentDepartureCount == 0)
+        return false;
+
+    unsigned long now = millis();
+
+    // Determine how many rows to consider
+    int rowsToCheck = (currentDepartureCount < currentNumToDisplay) ? currentDepartureCount : currentNumToDisplay;
+    if (rowsToCheck > 3) rowsToCheck = 3;
+
+    // Process only ONE row per call - round-robin through rows
+    // Use lastScrollTick to track which row to check next
+    static int currentRow = 0;
+
+    // Find next row that needs scrolling (up to rowsToCheck attempts)
+    for (int attempts = 0; attempts < rowsToCheck; attempts++)
+    {
+        int row = currentRow;
+        currentRow = (currentRow + 1) % rowsToCheck;  // Move to next row for next call
+
+        if (!scrollState[row].needsScroll)
+            continue;
+
+        // Stop scrolling if we've hit the max cycle count
+        if (scrollState[row].cycleCount >= SCROLL_MAX_CYCLES)
+            continue;
+
+        // Check if we're in a pause period
+        if (scrollState[row].paused)
+        {
+            // Determine pause duration based on position
+            int pauseDuration = scrollState[row].atStart ? SCROLL_PAUSE_START_MS : SCROLL_PAUSE_END_MS;
+
+            // Wait for pause duration to expire
+            if (now - scrollState[row].lastUpdate >= (unsigned long)pauseDuration)
+            {
+                // Pause is over
+                scrollState[row].paused = false;
+                scrollState[row].lastUpdate = now;
+
+                // If we were at the end, reset to beginning and increment cycle count
+                if (!scrollState[row].atStart)
+                {
+                    scrollState[row].cycleCount++;
+
+                    // Always reset to start position after finishing a cycle
+                    scrollState[row].offset = 0;
+                    scrollState[row].paused = true;   // Pause at start (forever if max cycles hit)
+                    scrollState[row].atStart = true;
+
+                    // Redraw at position 0
+                    redrawDestination(row, currentDepartures[row]);
+                    return true;  // Only process one row per call
+                }
+            }
+            continue;  // Still paused, try next row
+        }
+
+        // Check if it's time for the next scroll step
+        if (now - scrollState[row].lastUpdate >= SCROLL_INTERVAL_MS)
+        {
+            scrollState[row].lastUpdate = now;
+
+            // Increment offset
+            scrollState[row].offset++;
+
+            // Check if we've reached the end
+            if (scrollState[row].offset >= scrollState[row].maxOffset)
+            {
+                // At end - pause, then reset to beginning
+                scrollState[row].offset = scrollState[row].maxOffset;
+                scrollState[row].paused = true;
+                scrollState[row].atStart = false;  // At end
+            }
+
+            // Redraw just this row's destination
+            redrawDestination(row, currentDepartures[row]);
+            return true;  // Only process one row per call
+        }
+    }
+
+    return false;
+}
+
+void DisplayManager::redrawDestination(int row, const Departure& dep)
+{
+    if (row < 0 || row >= 3 || !display)
+        return;
+
+    int y = row * 8;
+
+    // Convert destination to ISO-8859-2
+    char destConverted[64];
+    strlcpy(destConverted, dep.destination, sizeof(destConverted));
+    utf8tocp(destConverted);
+
+    // Calculate destX (same logic as drawDeparture)
+    int destX = 22;
+    if (dep.hasAC)
+    {
+        destX += 6;
+    }
+
+    // Calculate platform reserved space (same logic as drawDeparture)
+    int platformReservedPx = 0;
+    if (config && config->showPlatform && dep.platform[0] != '\0')
+    {
+        int platformLen = strlen(dep.platform);
+        if (platformLen >= 3)
+        {
+            platformReservedPx = 15;
+        }
+        else if (platformLen == 2)
+        {
+            platformReservedPx = 11;
+        }
+        else
+        {
+            platformReservedPx = 9;
+        }
+    }
+
+    // Calculate ETA position and available space
+    int etaPosition = (dep.eta >= 10 || dep.eta < 1) ? 111 : 117;
+    int spaceCalcEta = (platformReservedPx > 0) ? 111 : etaPosition;
+    int availableSpace = spaceCalcEta - destX - platformReservedPx;
+
+    // Determine font and maxChars (same logic as drawDeparture)
+    int destLen = strlen(destConverted);
+    const GFXfont* destFont;
+    int maxChars;
+
+    int mediumThreshold = platformReservedPx > 0 ? 12 : 14;
+    mediumThreshold -= dep.hasAC ? 1 : 0;
+
+    if (destLen <= mediumThreshold)
+    {
+        destFont = fontMedium;
+        maxChars = availableSpace / 6;
+    }
+    else
+    {
+        destFont = fontCondensed;
+        maxChars = availableSpace / 4 - 1;  // -1 for padding
+    }
+
+    if (maxChars > 63) maxChars = 63;
+    if (maxChars < 1) maxChars = 1;
+
+    // Clear the destination area (from destX to just before platform/ETA)
+    // Clear 9 pixels: 8 for the row + 1 below baseline for descenders (y, g, p, q, j)
+    int clearWidth = spaceCalcEta - destX - platformReservedPx;
+    display->fillRect(destX, y, clearWidth, 9, COLOR_BLACK);
+
+    // Apply scroll offset and draw
+    display->setFont(destFont);
+    display->setTextColor(COLOR_WHITE);
+    display->setCursor(destX, y + 7);
+
+    char destTrunc[64];
+    int scrollOffset = scrollState[row].offset;
+    if (scrollOffset > scrollState[row].maxOffset)
+    {
+        scrollOffset = scrollState[row].maxOffset;
+    }
+    strncpy(destTrunc, destConverted + scrollOffset, maxChars);
+    destTrunc[maxChars] = '\0';
+    display->print(destTrunc);
 }

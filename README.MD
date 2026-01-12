@@ -30,6 +30,7 @@ Standalone operation with web-based configuration, no external server required f
 - **Persistent Settings**: Configuration stored in ESP32 flash memory, survives reboots
 - **Extended Character Support**: Custom 8-bit ISO-8859-2 fonts with automatic UTF-8 conversion (ž, š, č, ř, ň, ť, ď, ß, etc.)
 - **Adaptive Font Rendering**: Automatically switches to condensed font for long destination names (>16 chars), fitting up to 23 characters on screen
+- **Optional Scrolling**: Enable scrolling for long destination names that exceed display width (disabled by default)
 - **Headsign Shortening**: Automatic shortening of long Czech words (e.g., "Nádraží" → "Nádr.", "nádraží" → "nádr.") to maximize display space
 - **Trip Filtering**: Configurable minimum departure time (default 3 minutes) to hide departures that are too soon to catch
 - **AC Indicator**: Shows asterisk (*) for air-conditioned vehicles (Prague only)
@@ -128,6 +129,7 @@ The built-in web server provides:
   - Display brightness (0-255)
   - Custom line colors with position-based wildcard patterns (e.g., "9*" for 2-digit, "4**" for 3-digit)
   - Debug mode (enables telnet logging on port 23)
+  - Scrolling mode (scroll long destination names)
 - **Actions**:
   - Force refresh
   - Display demo (preview custom departures)

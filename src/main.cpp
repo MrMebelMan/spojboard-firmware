@@ -130,6 +130,9 @@ void recalculateETAs()
         }
     }
 
+    // Reset scroll state since departures may have changed positions
+    displayManager.resetScroll();
+
     logTimestamp();
     debugPrintln("ETA Recalc: Complete, display update triggered");
     needsDisplayUpdate = true;
@@ -519,8 +522,17 @@ void loop()
                                      demoModeActive);
     }
 
-    // Periodic display update (for time) - now handled by ETA recalc every 10s
-    // Removed to avoid redundant updates
+    // Scroll update for long destinations (runs frequently, ~50ms)
+    // Only run if scrolling is enabled in config
+    if (config.scrollEnabled)
+    {
+        static unsigned long lastScrollCheck = 0;
+        if (millis() - lastScrollCheck >= 50)
+        {
+            lastScrollCheck = millis();
+            displayManager.updateScroll();
+        }
+    }
 
     // Status logging every 60 seconds
     static unsigned long lastStatusLog = 0;

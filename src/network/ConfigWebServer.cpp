@@ -423,6 +423,9 @@ void ConfigWebServer::handleSave()
     // Show platform checkbox (unchecked = not present in POST data)
     newConfig.showPlatform = server->hasArg("showplatform");
 
+    // Scrolling checkbox (unchecked = not present in POST data)
+    newConfig.scrollEnabled = server->hasArg("scrollenabled");
+
     // Line color map (always update when not in AP mode to handle empty case)
     if (!apModeActive)
     {
