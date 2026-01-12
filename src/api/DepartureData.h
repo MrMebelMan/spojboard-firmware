@@ -47,4 +47,18 @@ void shortenDestination(char* destination);
  */
 int calculateETA(time_t departureTime);
 
+/**
+ * Remove all spaces from a string (leading, trailing, and middle)
+ * Modifies the string in-place
+ * @param str String to strip spaces from
+ */
+void stripSpaces(char* str);
+
+/**
+ * Remove all bracket characters from a string: < [ { ( ) } ] >
+ * Modifies the string in-place
+ * @param str String to strip brackets from
+ */
+void stripBrackets(char* str);
+
 #endif // DEPARTUREDATA_H

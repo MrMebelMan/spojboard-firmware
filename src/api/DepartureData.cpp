@@ -67,3 +67,42 @@ int calculateETA(time_t departureTime)
     int diffSec = difftime(departureTime, now);
     return (diffSec > 0) ? (diffSec / 60) : 0;
 }
+
+// ============================================================================
+// String Space Removal
+// ============================================================================
+
+void stripSpaces(char* str)
+{
+    char* src = str;
+    char* dst = str;
+    while (*src)
+    {
+        if (*src != ' ')
+        {
+            *dst++ = *src;
+        }
+        src++;
+    }
+    *dst = '\0';
+}
+
+// ============================================================================
+// String Bracket Removal
+// ============================================================================
+
+void stripBrackets(char* str)
+{
+    char* src = str;
+    char* dst = str;
+    while (*src)
+    {
+        char c = *src;
+        if (c != '<' && c != '>' && c != '[' && c != ']' && c != '{' && c != '}' && c != '(' && c != ')')
+        {
+            *dst++ = c;
+        }
+        src++;
+    }
+    *dst = '\0';
+}

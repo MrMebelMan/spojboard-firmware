@@ -358,6 +358,8 @@ bool MqttAPI::parseResponse(const Config& config, Departure* tempDepartures, int
             continue; // Skip if no line number
         }
         strlcpy(dep.line, line, sizeof(dep.line));
+        stripSpaces(dep.line);
+        stripBrackets(dep.line);
 
         // Extract destination (required)
         const char* dest = getJsonField(depObj, config.mqttFieldDestination, "");

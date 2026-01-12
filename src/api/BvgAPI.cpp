@@ -275,6 +275,8 @@ void BvgAPI::parseDepartureObject(JsonObject depJson, const Config& config, Depa
     }
 
     strlcpy(tempDepartures[tempCount].line, lineName, sizeof(tempDepartures[tempCount].line));
+    stripSpaces(tempDepartures[tempCount].line);
+    stripBrackets(tempDepartures[tempCount].line);
 
     // Extract direction (destination)
     const char* direction = depJson["direction"].as<const char*>();
@@ -340,17 +342,9 @@ void BvgAPI::parseDepartureObject(JsonObject depJson, const Config& config, Depa
             platformDisplay = spacePos + 1; // Skip "Gleis " prefix
         }
 
-        // Copy to platform field, removing parentheses
-        char* dest = tempDepartures[tempCount].platform;
-        int destIdx = 0;
-        for (int i = 0; platformDisplay[i] != '\0' && destIdx < 3; i++)
-        {
-            if (platformDisplay[i] != '(' && platformDisplay[i] != ')')
-            {
-                dest[destIdx++] = platformDisplay[i];
-            }
-        }
-        dest[destIdx] = '\0';
+        // Copy to platform field, strip brackets, truncate to fit
+        strlcpy(tempDepartures[tempCount].platform, platformDisplay, sizeof(tempDepartures[tempCount].platform));
+        stripBrackets(tempDepartures[tempCount].platform);
 
         if (config.debugMode && strlen(platformDisplay) > 3)
         {

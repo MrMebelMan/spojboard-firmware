@@ -267,6 +267,8 @@ void GolemioAPI::parseDepartureObject(JsonObject depJson,
     if (line)
     {
         strlcpy(tempDepartures[tempCount].line, line, sizeof(tempDepartures[0].line));
+        stripSpaces(tempDepartures[tempCount].line);
+        stripBrackets(tempDepartures[tempCount].line);
     }
     else
     {

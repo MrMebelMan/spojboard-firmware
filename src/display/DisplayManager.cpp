@@ -816,9 +816,10 @@ void DisplayManager::redrawDestination(int row, const Departure &dep)
         maxChars = 1;
 
     // Clear the destination area (from destX to just before platform/ETA)
-    // Clear 9 pixels: 8 for the row + 1 below baseline for descenders (y, g, p, q, j)
+    // Clear 8 pixels: 7 for the row (skip topmost) + 1 below baseline for descenders (y, g, p, q, j)
+    // Font has no top overflows, so start at y+1 to preserve row above
     int clearWidth = spaceCalcEta - destX - platformReservedPx;
-    display->fillRect(destX, y, clearWidth, 9, COLOR_BLACK);
+    display->fillRect(destX, y + 1, clearWidth, 8, COLOR_BLACK);
 
     // Apply scroll offset and draw
     display->setFont(destFont);
