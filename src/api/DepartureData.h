@@ -7,18 +7,18 @@
 // Departure Data Structures
 // ============================================================================
 
-#define MAX_DEPARTURES 12  // Increased for better caching with filtering
+#define MAX_DEPARTURES 12 // Increased for better caching with filtering
 
 struct Departure
 {
-    char line[8];         // Line number (e.g., "31", "A", "S9")
+    char line[8]; // Line number (e.g., "31", "A", "S9")
     char destination[64]; // Destination/headsign
-    int eta;              // Minutes until departure (recalculated from departureTime)
+    int eta; // Minutes until departure (recalculated from departureTime)
     time_t departureTime; // Unix timestamp of departure (from API)
-    char platform[8];     // Platform/track (e.g., "D", "3", optional)
-    bool hasAC;           // Air conditioning
-    bool isDelayed;       // Has delay
-    int delayMinutes;     // Delay in minutes
+    char platform[8]; // Platform/track (e.g., "D", "3", optional)
+    bool hasAC; // Air conditioning
+    bool isDelayed; // Has delay
+    int delayMinutes; // Delay in minutes
 };
 
 // ============================================================================

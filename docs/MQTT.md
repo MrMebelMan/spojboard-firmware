@@ -2,37 +2,50 @@
 
 ## Overview
 
-SpojBoard's MQTT API enables integration with home automation systems like Home Assistant. Instead of querying transit APIs directly, SpojBoard sends an MQTT request and receives departure data from your server, which can aggregate data from multiple sources, apply custom filtering, and reduce API calls.
+SpojBoard's MQTT API enables integration with any server that can provide transit data over MQTT. Instead of querying transit APIs directly, SpojBoard sends an MQTT request and receives departure data from your server, which can aggregate data from multiple sources, apply custom filtering, and reduce API calls.
+
+**Any MQTT-capable server will work**, as long as it can:
+- Provide transit/transport data (from any source: APIs, databases, scraping, etc.)
+- Communicate over MQTT protocol
+- Keep data fresh (update regularly)
+- Listen for SpojBoard requests and respond with JSON
+
+This document uses **Home Assistant as an example implementation**, but the same principles apply to custom Python scripts, Node-RED flows, or any other MQTT-enabled system.
 
 ## Architecture
 
 ```
-┌──────────────┐                    ┌──────────────────┐                  ┌─────────────────┐
-│  SpojBoard   │                    │  MQTT Broker     │                  │ Home Assistant  │
-│              │                    │  (Mosquitto)     │                  │                 │
-│              │                    │                  │                  │                 │
-│   1. Publish │───"request"──────>│  Request Topic   │──── Trigger ────>│ Binary Sensor   │
-│              │                    │                  │                  │                 │
-│              │                    │                  │                  │      ↓          │
-│              │                    │                  │                  │  Automation     │
-│              │                    │                  │                  │      ↓          │
-│              │                    │                  │                  │ Template Sensor │
-│              │                    │                  │                  │      ↓          │
-│   2. Receive │<───JSON response──│  Response Topic  │<─── Publish ─────│ MQTT Publish    │
-│              │                    │                  │                  │                 │
-│   3. Parse   │                    │                  │                  │                 │
-│   4. Display │                    │                  │                  │                 │
-└──────────────┘                    └──────────────────┘                  └─────────────────┘
-      Every                              Always on                          Reactive
-   60s (config)                                                          (on SpojBoard request)
+┌──────────────┐                    ┌──────────────────┐                  ┌─────────────────────┐
+│  SpojBoard   │                    │  MQTT Broker     │                  │   Your Server       │
+│              │                    │  (Mosquitto)     │                  │ (HA, Python, etc.)  │
+│              │                    │                  │                  │                     │
+│   1. Publish │───"request"──────>│  Request Topic   │──── Trigger ────>│ Request Handler     │
+│              │                    │                  │                  │                     │
+│              │                    │                  │                  │        ↓            │
+│              │                    │                  │                  │  Fetch/Format       │
+│              │                    │                  │                  │  Transit Data       │
+│              │                    │                  │                  │        ↓            │
+│   2. Receive │<───JSON response──│  Response Topic  │<─── Publish ─────│ MQTT Publish        │
+│              │                    │                  │                  │                     │
+│   3. Parse   │                    │                  │                  │                     │
+│   4. Display │                    │                  │                  │                     │
+└──────────────┘                    └──────────────────┘                  └─────────────────────┘
+     Every                              Always on                          Reactive
+  60s (config)                                                          (on SpojBoard request)
 ```
 
 **Request/Response Pattern:**
 1. SpojBoard publishes `"request"` to request topic every N seconds (configurable)
-2. Home Assistant binary sensor detects the request
-3. Automation triggers and queries template sensor for formatted departures
-4. Automation publishes JSON response to response topic
+2. Your server detects the request (via MQTT subscription)
+3. Server fetches/formats transit data (from APIs, databases, cache, etc.)
+4. Server publishes JSON response to response topic
 5. SpojBoard receives, parses, and displays departures
+
+**Server Implementation Examples:**
+- **Home Assistant**: Binary sensor + automation + template sensor (detailed example below)
+- **Python script**: MQTT client subscribing to request topic, responding with transit data
+- **Node-RED**: Flow with MQTT input → API call → JSON formatting → MQTT output
+- **Custom daemon**: Any service that can listen to MQTT and provide transit JSON
 
 ## Key Features
 
@@ -169,10 +182,35 @@ SpojBoard expects a JSON object with a `"departures"` array:
 - `ac`: Optional, shows ❄️ icon on display if `true`
 - Additional fields in JSON are ignored
 
-## Home Assistant Setup
+## Generic Server Requirements
 
-### Prerequisites
+**You can use any server that can:**
+1. **Subscribe to MQTT topics** - Listen for SpojBoard's "request" message
+2. **Fetch transit data** - From any source (APIs, databases, web scraping, local cache)
+3. **Format JSON** - Create the departures array shown above
+4. **Publish to MQTT** - Send the JSON response to SpojBoard
+5. **Keep data fresh** - Update regularly to show current departures
 
+**Implementation options:**
+- **Home Assistant** - Template sensors + automations (detailed example below)
+- **Python script** - paho-mqtt client + API calls + JSON formatting
+- **Node-RED** - Visual flow programming with MQTT nodes
+- **Custom daemon** - Any language with MQTT library (Go, Rust, JavaScript, etc.)
+- **Shell script** - mosquitto_pub + curl + jq for simple setups
+
+**Key considerations:**
+- Response time: Aim for <2 seconds from request to response
+- Data freshness: Update your transit data source frequently (every 15-30 seconds recommended)
+- Filtering: Apply minimum departure time filter server-side to reduce MQTT payload size
+- Error handling: Return empty departures array if no data available (don't fail to respond)
+
+## Server Implementation Examples
+
+This section provides detailed examples of how to implement an MQTT server for SpojBoard. **Home Assistant is shown as the primary example**, but the same concepts apply to any MQTT-capable system.
+
+### Example 1: Home Assistant
+
+**Prerequisites:**
 - Home Assistant with MQTT integration enabled
 - MQTT broker (Mosquitto addon recommended)
 - Transit data sensors (e.g., PID, GTFS, custom API integration)
@@ -252,8 +290,8 @@ template:
               {% endif %}
             {% endfor %}
 
-            {# Return top 3 #}
-            {{ ns.departures[:3] }}
+            {# Return all #}
+            {{ ns.departures }}
 ```
 
 **Customization Points:**
@@ -261,7 +299,7 @@ template:
 - **Destination formatting**: Modify replacements, truncation as needed
 - **Platform logic**: Customize `plt` field based on your stop mapping
 - **Minimum ETA filter**: `{% if eta >= 3 %}` - ⚠️ **Must match SpojBoard's minDepartureTime setting** (see Dual Filtering Strategy)
-- **Return count**: `{{ ns.departures[:3] }}` - adjust number based on how many rows you want to display
+- **Return count**: `{{ ns.departures[:3] }}` - adjust number based on how many rows you want to send to device
 
 #### Example: Generic GTFS/Custom API
 
@@ -639,14 +677,14 @@ mosquitto_passwd -c /etc/mosquitto/passwd spojboard
 
 | Feature | MQTT API | Direct API (Prague/Berlin) |
 |---------|----------|---------------------------|
-| **Setup Complexity** | Medium (requires Home Assistant) | Low (just API key) |
-| **API Calls** | Reduced (aggregated by HA) | Direct (one per refresh) |
+| **Setup Complexity** | Medium (requires MQTT server) | Low (just API key) |
+| **API Calls** | Reduced (aggregated by server) | Direct (one per refresh) |
 | **Flexibility** | High (custom filtering, multi-source) | Low (API-specific) |
 | **Latency** | Low (local network) | Medium (internet) |
-| **Dependencies** | MQTT broker + HA | Internet connection only |
-| **Offline Resilience** | High (cached in HA) | None (requires API) |
-| **Multi-Stop** | Easy (HA aggregates) | Limited (API constraints) |
-| **Custom Data** | Full control (templates) | API-provided only |
+| **Dependencies** | MQTT broker + server (HA/Python/etc.) | Internet connection only |
+| **Offline Resilience** | High (cached in server) | None (requires API) |
+| **Multi-Stop** | Easy (server aggregates) | Limited (API constraints) |
+| **Custom Data** | Full control (server-side logic) | API-provided only |
 
 ## Related Documentation
 

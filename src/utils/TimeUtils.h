@@ -11,7 +11,7 @@
 #define NTP_SERVER "pool.ntp.org"
 
 // Timezone: CET/CEST (Prague)
-#define GMT_OFFSET_SEC 3600      // CET = UTC+1
+#define GMT_OFFSET_SEC 3600 // CET = UTC+1
 #define DAYLIGHT_OFFSET_SEC 3600 // CEST = UTC+2
 
 // ============================================================================

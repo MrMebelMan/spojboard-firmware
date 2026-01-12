@@ -7,7 +7,7 @@
 // Static Members
 // ============================================================================
 
-MqttAPI *MqttAPI::instanceForCallback = nullptr;
+MqttAPI* MqttAPI::instanceForCallback = nullptr;
 
 // ============================================================================
 // Constructor / Destructor
@@ -16,10 +16,10 @@ MqttAPI *MqttAPI::instanceForCallback = nullptr;
 MqttAPI::MqttAPI() : statusCallback(nullptr), responseReceived(false), responseTimeout(0)
 {
     mqttClient = new PubSubClient(wifiClient);
-    mqttClient->setBufferSize(MQTT_BUFFER_SIZE);  // CRITICAL: Must be called before connect
+    mqttClient->setBufferSize(MQTT_BUFFER_SIZE); // CRITICAL: Must be called before connect
     mqttClient->setCallback(messageCallback);
 
-    instanceForCallback = this;  // Set static pointer for callback
+    instanceForCallback = this; // Set static pointer for callback
 }
 
 MqttAPI::~MqttAPI()
@@ -49,7 +49,7 @@ void MqttAPI::setStatusCallback(APIStatusCallback callback)
     statusCallback = callback;
 }
 
-TransitAPI::APIResult MqttAPI::fetchDepartures(const Config &config)
+TransitAPI::APIResult MqttAPI::fetchDepartures(const Config& config)
 {
     APIResult result;
     result.departureCount = 0;
@@ -183,7 +183,7 @@ TransitAPI::APIResult MqttAPI::fetchDepartures(const Config &config)
 // Connection Management
 // ============================================================================
 
-bool MqttAPI::connectToBroker(const Config &config)
+bool MqttAPI::connectToBroker(const Config& config)
 {
     // Already connected?
     if (mqttClient->connected())
@@ -195,8 +195,7 @@ bool MqttAPI::connectToBroker(const Config &config)
     uint8_t mac[6];
     WiFi.macAddress(mac);
     char clientId[32];
-    snprintf(clientId, sizeof(clientId), "spojboard-%02X%02X%02X",
-             mac[3], mac[4], mac[5]);
+    snprintf(clientId, sizeof(clientId), "spojboard-%02X%02X%02X", mac[3], mac[4], mac[5]);
 
     logTimestamp();
     debugPrint("MQTT: Connecting to ");
@@ -263,7 +262,7 @@ bool MqttAPI::connectToBroker(const Config &config)
 // MQTT Callback Handling
 // ============================================================================
 
-void MqttAPI::messageCallback(char *topic, byte *payload, unsigned int length)
+void MqttAPI::messageCallback(char* topic, byte* payload, unsigned int length)
 {
     if (instanceForCallback != nullptr)
     {
@@ -271,14 +270,14 @@ void MqttAPI::messageCallback(char *topic, byte *payload, unsigned int length)
     }
 }
 
-void MqttAPI::handleMessage(char *topic, byte *payload, unsigned int length)
+void MqttAPI::handleMessage(char* topic, byte* payload, unsigned int length)
 {
     logTimestamp();
     debugPrint("MQTT: Message received (");
     debugPrint(length);
     debugPrintln(" bytes)");
 
-    responsePayload = String((char *)payload, length);
+    responsePayload = String((char*)payload, length);
     responseReceived = true;
 }
 
@@ -288,7 +287,7 @@ bool MqttAPI::waitForResponse()
 
     while (!responseReceived && millis() < responseTimeout)
     {
-        mqttClient->loop();  // Process incoming messages
+        mqttClient->loop(); // Process incoming messages
         delay(10);
     }
 
@@ -299,7 +298,7 @@ bool MqttAPI::waitForResponse()
 // JSON Parsing
 // ============================================================================
 
-bool MqttAPI::parseResponse(const Config &config, Departure *tempDepartures, int &tempCount)
+bool MqttAPI::parseResponse(const Config& config, Departure* tempDepartures, int& tempCount)
 {
     tempCount = 0;
 
@@ -353,18 +352,18 @@ bool MqttAPI::parseResponse(const Config &config, Departure *tempDepartures, int
         memset(&dep, 0, sizeof(dep));
 
         // Extract line number (required)
-        const char *line = getJsonField(depObj, config.mqttFieldLine, "");
+        const char* line = getJsonField(depObj, config.mqttFieldLine, "");
         if (strlen(line) == 0)
         {
-            continue;  // Skip if no line number
+            continue; // Skip if no line number
         }
         strlcpy(dep.line, line, sizeof(dep.line));
 
         // Extract destination (required)
-        const char *dest = getJsonField(depObj, config.mqttFieldDestination, "");
+        const char* dest = getJsonField(depObj, config.mqttFieldDestination, "");
         if (strlen(dest) == 0)
         {
-            continue;  // Skip if no destination
+            continue; // Skip if no destination
         }
         strlcpy(dep.destination, dest, sizeof(dep.destination));
 
@@ -378,7 +377,7 @@ bool MqttAPI::parseResponse(const Config &config, Departure *tempDepartures, int
             dep.eta = getJsonFieldInt(depObj, config.mqttFieldEta, -1);
             if (dep.eta < 0)
             {
-                continue;  // Skip if no ETA
+                continue; // Skip if no ETA
             }
 
             // Synthesize departureTime for recalculation compatibility
@@ -390,19 +389,19 @@ bool MqttAPI::parseResponse(const Config &config, Departure *tempDepartures, int
             dep.departureTime = getJsonFieldInt(depObj, config.mqttFieldTimestamp, 0);
             if (dep.departureTime == 0)
             {
-                continue;  // Skip if no timestamp
+                continue; // Skip if no timestamp
             }
 
             // Calculate ETA from timestamp
             dep.eta = calculateETA(dep.departureTime);
             if (dep.eta < 0)
             {
-                continue;  // Skip if already departed
+                continue; // Skip if already departed
             }
         }
 
         // Extract optional platform field
-        const char *platform = getJsonField(depObj, config.mqttFieldPlatform, "");
+        const char* platform = getJsonField(depObj, config.mqttFieldPlatform, "");
         strlcpy(dep.platform, platform, sizeof(dep.platform));
 
         // Extract optional AC field
@@ -417,7 +416,9 @@ bool MqttAPI::parseResponse(const Config &config, Departure *tempDepartures, int
         {
             logTimestamp();
             char debugMsg[128];
-            snprintf(debugMsg, sizeof(debugMsg), "MQTT API: Line %s to %s - ETA: %d min (Platform: %s, AC: %d)",
+            snprintf(debugMsg,
+                     sizeof(debugMsg),
+                     "MQTT API: Line %s to %s - ETA: %d min (Platform: %s, AC: %d)",
                      dep.line,
                      dep.destination,
                      dep.eta,
@@ -442,16 +443,16 @@ bool MqttAPI::parseResponse(const Config &config, Departure *tempDepartures, int
 // JSON Field Extraction Helpers
 // ============================================================================
 
-const char *MqttAPI::getJsonField(JsonObject obj, const char *fieldName, const char *defaultValue)
+const char* MqttAPI::getJsonField(JsonObject obj, const char* fieldName, const char* defaultValue)
 {
     if (obj.containsKey(fieldName))
     {
-        return obj[fieldName].as<const char *>();
+        return obj[fieldName].as<const char*>();
     }
     return defaultValue;
 }
 
-int MqttAPI::getJsonFieldInt(JsonObject obj, const char *fieldName, int defaultValue)
+int MqttAPI::getJsonFieldInt(JsonObject obj, const char* fieldName, int defaultValue)
 {
     if (obj.containsKey(fieldName))
     {
@@ -460,7 +461,7 @@ int MqttAPI::getJsonFieldInt(JsonObject obj, const char *fieldName, int defaultV
     return defaultValue;
 }
 
-bool MqttAPI::getJsonFieldBool(JsonObject obj, const char *fieldName, bool defaultValue)
+bool MqttAPI::getJsonFieldBool(JsonObject obj, const char* fieldName, bool defaultValue)
 {
     if (obj.containsKey(fieldName))
     {

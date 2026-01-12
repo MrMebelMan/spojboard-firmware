@@ -102,7 +102,18 @@ static const char MON_EN_8[] PROGMEM = "Sep";
 static const char MON_EN_9[] PROGMEM = "Oct";
 static const char MON_EN_10[] PROGMEM = "Nov";
 static const char MON_EN_11[] PROGMEM = "Dec";
-static const char* const MONTHS_EN[] PROGMEM = {MON_EN_0, MON_EN_1, MON_EN_2, MON_EN_3, MON_EN_4, MON_EN_5, MON_EN_6, MON_EN_7, MON_EN_8, MON_EN_9, MON_EN_10, MON_EN_11};
+static const char* const MONTHS_EN[] PROGMEM = {MON_EN_0,
+                                                MON_EN_1,
+                                                MON_EN_2,
+                                                MON_EN_3,
+                                                MON_EN_4,
+                                                MON_EN_5,
+                                                MON_EN_6,
+                                                MON_EN_7,
+                                                MON_EN_8,
+                                                MON_EN_9,
+                                                MON_EN_10,
+                                                MON_EN_11};
 
 // Czech month abbreviations (3 chars)
 static const char MON_CS_0[] PROGMEM = "Led";
@@ -117,7 +128,18 @@ static const char MON_CS_8[] PROGMEM = "Zář";
 static const char MON_CS_9[] PROGMEM = "Říj";
 static const char MON_CS_10[] PROGMEM = "Lis";
 static const char MON_CS_11[] PROGMEM = "Pro";
-static const char* const MONTHS_CS[] PROGMEM = {MON_CS_0, MON_CS_1, MON_CS_2, MON_CS_3, MON_CS_4, MON_CS_5, MON_CS_6, MON_CS_7, MON_CS_8, MON_CS_9, MON_CS_10, MON_CS_11};
+static const char* const MONTHS_CS[] PROGMEM = {MON_CS_0,
+                                                MON_CS_1,
+                                                MON_CS_2,
+                                                MON_CS_3,
+                                                MON_CS_4,
+                                                MON_CS_5,
+                                                MON_CS_6,
+                                                MON_CS_7,
+                                                MON_CS_8,
+                                                MON_CS_9,
+                                                MON_CS_10,
+                                                MON_CS_11};
 
 // German month abbreviations (3 chars)
 static const char MON_DE_0[] PROGMEM = "Jan";
@@ -132,15 +154,30 @@ static const char MON_DE_8[] PROGMEM = "Sep";
 static const char MON_DE_9[] PROGMEM = "Okt";
 static const char MON_DE_10[] PROGMEM = "Nov";
 static const char MON_DE_11[] PROGMEM = "Dez";
-static const char* const MONTHS_DE[] PROGMEM = {MON_DE_0, MON_DE_1, MON_DE_2, MON_DE_3, MON_DE_4, MON_DE_5, MON_DE_6, MON_DE_7, MON_DE_8, MON_DE_9, MON_DE_10, MON_DE_11};
+static const char* const MONTHS_DE[] PROGMEM = {MON_DE_0,
+                                                MON_DE_1,
+                                                MON_DE_2,
+                                                MON_DE_3,
+                                                MON_DE_4,
+                                                MON_DE_5,
+                                                MON_DE_6,
+                                                MON_DE_7,
+                                                MON_DE_8,
+                                                MON_DE_9,
+                                                MON_DE_10,
+                                                MON_DE_11};
 
 const char* getLocalizedDay(int tm_wday, const char* lang)
 {
-    if (tm_wday < 0 || tm_wday > 6) tm_wday = 0;
+    if (tm_wday < 0 || tm_wday > 6)
+        tm_wday = 0;
 
-    if (strcmp(lang, "cs") == 0) {
+    if (strcmp(lang, "cs") == 0)
+    {
         return (const char*)pgm_read_ptr(&DAYS_CS[tm_wday]);
-    } else if (strcmp(lang, "de") == 0) {
+    }
+    else if (strcmp(lang, "de") == 0)
+    {
         return (const char*)pgm_read_ptr(&DAYS_DE[tm_wday]);
     }
     return (const char*)pgm_read_ptr(&DAYS_EN[tm_wday]);
@@ -148,11 +185,15 @@ const char* getLocalizedDay(int tm_wday, const char* lang)
 
 const char* getLocalizedMonth(int tm_mon, const char* lang)
 {
-    if (tm_mon < 0 || tm_mon > 11) tm_mon = 0;
+    if (tm_mon < 0 || tm_mon > 11)
+        tm_mon = 0;
 
-    if (strcmp(lang, "cs") == 0) {
+    if (strcmp(lang, "cs") == 0)
+    {
         return (const char*)pgm_read_ptr(&MONTHS_CS[tm_mon]);
-    } else if (strcmp(lang, "de") == 0) {
+    }
+    else if (strcmp(lang, "de") == 0)
+    {
         return (const char*)pgm_read_ptr(&MONTHS_DE[tm_mon]);
     }
     return (const char*)pgm_read_ptr(&MONTHS_EN[tm_mon]);

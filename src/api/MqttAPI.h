@@ -27,7 +27,7 @@
  */
 class MqttAPI : public TransitAPI
 {
-public:
+  public:
     MqttAPI();
     virtual ~MqttAPI();
 
@@ -42,11 +42,11 @@ public:
      * @param config Configuration with MQTT broker, topics, and field mappings
      * @return APIResult with departures, count, and error status
      */
-    virtual APIResult fetchDepartures(const Config &config) override;
+    virtual APIResult fetchDepartures(const Config& config) override;
 
-private:
+  private:
     WiFiClient wifiClient;
-    PubSubClient *mqttClient;
+    PubSubClient* mqttClient;
     APIStatusCallback statusCallback;
 
     // Response handling
@@ -55,30 +55,30 @@ private:
     unsigned long responseTimeout;
 
     // Constants
-    static constexpr int JSON_BUFFER_SIZE = 8192;      // 8KB for JSON parsing
-    static constexpr int MQTT_BUFFER_SIZE = 8192;      // 8KB for MQTT messages
-    static constexpr int RESPONSE_TIMEOUT_MS = 10000;  // 10 seconds
-    static constexpr int CONNECT_TIMEOUT_MS = 5000;    // 5 seconds
-    static constexpr int MAX_TEMP_DEPARTURES = MAX_DEPARTURES * 12;  // 144 departures
+    static constexpr int JSON_BUFFER_SIZE = 8192; // 8KB for JSON parsing
+    static constexpr int MQTT_BUFFER_SIZE = 8192; // 8KB for MQTT messages
+    static constexpr int RESPONSE_TIMEOUT_MS = 10000; // 10 seconds
+    static constexpr int CONNECT_TIMEOUT_MS = 5000; // 5 seconds
+    static constexpr int MAX_TEMP_DEPARTURES = MAX_DEPARTURES * 12; // 144 departures
 
     /**
      * Connect to MQTT broker with optional authentication
      * @param config Configuration with broker address, port, username, password
      * @return true if connected successfully
      */
-    bool connectToBroker(const Config &config);
+    bool connectToBroker(const Config& config);
 
     /**
      * MQTT message callback (static wrapper for PubSubClient)
      * Forwards to instance method via static pointer
      */
-    static void messageCallback(char *topic, byte *payload, unsigned int length);
+    static void messageCallback(char* topic, byte* payload, unsigned int length);
 
     /**
      * Instance method for message handling
      * Stores response payload and sets responseReceived flag
      */
-    void handleMessage(char *topic, byte *payload, unsigned int length);
+    void handleMessage(char* topic, byte* payload, unsigned int length);
 
     /**
      * Wait for MQTT response with timeout
@@ -93,7 +93,7 @@ private:
      * @param tempCount Output: number of departures parsed
      * @return true if parsing successful
      */
-    bool parseResponse(const Config &config, Departure *tempDepartures, int &tempCount);
+    bool parseResponse(const Config& config, Departure* tempDepartures, int& tempCount);
 
     /**
      * Extract string field value from JSON object using configured field name
@@ -102,7 +102,7 @@ private:
      * @param defaultValue Default if field missing
      * @return Field value or default
      */
-    const char* getJsonField(JsonObject obj, const char *fieldName, const char *defaultValue);
+    const char* getJsonField(JsonObject obj, const char* fieldName, const char* defaultValue);
 
     /**
      * Extract integer field value from JSON object using configured field name
@@ -111,7 +111,7 @@ private:
      * @param defaultValue Default if field missing
      * @return Field value or default
      */
-    int getJsonFieldInt(JsonObject obj, const char *fieldName, int defaultValue);
+    int getJsonFieldInt(JsonObject obj, const char* fieldName, int defaultValue);
 
     /**
      * Extract boolean field value from JSON object using configured field name
@@ -120,10 +120,10 @@ private:
      * @param defaultValue Default if field missing
      * @return Field value or default
      */
-    bool getJsonFieldBool(JsonObject obj, const char *fieldName, bool defaultValue);
+    bool getJsonFieldBool(JsonObject obj, const char* fieldName, bool defaultValue);
 
     // Static instance pointer for callback (required by PubSubClient)
-    static MqttAPI *instanceForCallback;
+    static MqttAPI* instanceForCallback;
 };
 
 #endif // MQTTAPI_H

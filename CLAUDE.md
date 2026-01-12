@@ -64,6 +64,22 @@ pio project config
 pio device list
 ```
 
+## Code Style
+
+The project uses VSCode's C/C++ extension formatter (Microsoft style). Configuration files committed to repo:
+
+- **`.clang-format`** - C/C++ formatting rules (Microsoft base style, 4-space indent, 120 char lines)
+- **`.editorconfig`** - Cross-editor settings (UTF-8, LF line endings, indent sizes per file type)
+
+Key style rules:
+- 4-space indentation (no tabs)
+- Opening brace on same line for arrays/structs, own line for functions/control statements
+- Pointer/reference aligned left (`int* ptr`, `const Departure& dep`)
+- 120 character line limit
+- Includes not auto-sorted (preserve manual ordering)
+
+To format: Use VSCode's "Format Document" (`Shift+Alt+F`) with C/C++ extension as default formatter.
+
 ## Architecture
 
 ### Modular Structure

@@ -23,7 +23,7 @@ void logTimestamp()
     }
 }
 
-void logMemory(const char *location)
+void logMemory(const char* location)
 {
     logTimestamp();
     Serial.print("MEM@");
@@ -37,8 +37,7 @@ void logMemory(const char *location)
     if (g_config && g_config->debugMode && TelnetLogger::getInstance().isActive())
     {
         char buf[128];
-        snprintf(buf, sizeof(buf), "MEM@%s: Free=%u Min=%u\n",
-                 location, ESP.getFreeHeap(), ESP.getMinFreeHeap());
+        snprintf(buf, sizeof(buf), "MEM@%s: Free=%u Min=%u\n", location, ESP.getFreeHeap(), ESP.getMinFreeHeap());
         TelnetLogger::getInstance().print(buf);
     }
 }

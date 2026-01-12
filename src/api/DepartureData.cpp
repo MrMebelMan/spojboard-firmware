@@ -7,8 +7,8 @@
 
 struct StringReplacement
 {
-    const char *search;
-    const char *replace;
+    const char* search;
+    const char* replace;
 };
 
 // Common Czech words to shorten for display space
@@ -26,11 +26,11 @@ static const StringReplacement replacements[] = {
 };
 static const int replacementCount = sizeof(replacements) / sizeof(replacements[0]);
 
-void shortenDestination(char *destination)
+void shortenDestination(char* destination)
 {
     for (int i = 0; i < replacementCount; i++)
     {
-        char *pos = strstr(destination, replacements[i].search);
+        char* pos = strstr(destination, replacements[i].search);
         if (pos != NULL)
         {
             int searchLen = strlen(replacements[i].search);
@@ -49,10 +49,10 @@ void shortenDestination(char *destination)
 // Departure Sorting Helper
 // ============================================================================
 
-int compareDepartures(const void *a, const void *b)
+int compareDepartures(const void* a, const void* b)
 {
-    Departure *depA = (Departure *)a;
-    Departure *depB = (Departure *)b;
+    Departure* depA = (Departure*)a;
+    Departure* depB = (Departure*)b;
     return depA->eta - depB->eta; // Sort by ETA ascending
 }
 

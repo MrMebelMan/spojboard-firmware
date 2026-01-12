@@ -23,7 +23,6 @@ Standalone operation with web-based configuration, no external server required f
 - **Direct API Access**: Fetches departure data every 10-300 seconds (configurable)
 - **MQTT Integration**: Request/response pattern with configurable JSON field mappings, dual ETA modes (timestamp/pre-calculated), and server-side aggregation - see [MQTT Guide](docs/MQTT.md)
 - **Local ETA Updates**: Recalculates ETAs every 10 seconds from cached timestamps without additional API calls - reduces server load while keeping display fresh
-- **Extended Buffer**: Always fetches and caches 12 departures per stop for better sorting and filtering
 - **Multi-Stop Support**: Query up to 12 stops simultaneously (144 departure buffer), automatically sorted by departure time with 1s rate limiting
 - **WiFi Setup Portal**: Automatic AP mode with captive portal when WiFi fails - no code editing needed
 - **Web Configuration**: Easy setup via built-in web interface with city selector
