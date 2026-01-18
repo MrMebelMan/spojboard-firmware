@@ -46,19 +46,21 @@ private:
      * @param tempCount Current count in temp array
      * @param stopName Output: stop name (from first stop only)
      * @param isFirstStop Whether this is the first stop being queried
+     * @param stopIndex Index of the stop (0, 1, 2, ...)
      * @return true if query succeeded
      */
     bool querySingleStop(const char *stopId, const Config &config,
                          Departure *tempDepartures, int &tempCount,
-                         char *stopName, bool &isFirstStop);
+                         char *stopName, bool &isFirstStop, int stopIndex);
 
     /**
      * Parse departure JSON object and add to temp array
      * @param depJson JSON object for single departure
      * @param tempDepartures Array to add to
      * @param tempCount Current count (will be incremented)
+     * @param stopIndex Index of the stop this departure is from
      */
-    void parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount);
+    void parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount, int stopIndex);
 };
 
 #endif // GOLEMIOAPI_H

@@ -1,9 +1,15 @@
 #include "ConfigWebServer.h"
+
+// ConfigWebServer is stubbed in header for M4
+#if !defined(MATRIX_PORTAL_M4)
+
 #include "../utils/Logger.h"
 #include "../display/DisplayManager.h"
+#include <string.h>
 #include <WiFi.h>
 #include <Update.h>
-#include <string.h>
+
+static inline void systemRestart() { ESP.restart(); }
 
 // Helper function to count stops in comma-separated list
 static int countStops(const char* stopIds) {
@@ -62,7 +68,11 @@ const char *ConfigWebServer::HTML_HEADER = R"rawliteral(
 const char *ConfigWebServer::HTML_FOOTER = "</body></html>";
 
 ConfigWebServer::ConfigWebServer()
-    : server(nullptr), otaManager(nullptr), githubOTA(nullptr), displayManager(nullptr),
+    : server(nullptr), otaManager(nullptr),
+#if !defined(MATRIX_PORTAL_M4)
+      githubOTA(nullptr),
+#endif
+      displayManager(nullptr),
       currentConfig(nullptr),
       wifiConnected(false), apModeActive(false),
       apSSID(""), apPassword(""), apClientCount(0),
@@ -71,7 +81,9 @@ ConfigWebServer::ConfigWebServer()
       onDemoStartCallback(nullptr), onDemoStopCallback(nullptr)
 {
     otaManager = new OTAUpdateManager();
+#if !defined(MATRIX_PORTAL_M4)
     githubOTA = new GitHubOTA();
+#endif
     instanceForCallback = this; // Set static instance for OTA callback
 }
 
@@ -85,11 +97,13 @@ ConfigWebServer::~ConfigWebServer()
         otaManager = nullptr;
     }
 
+#if !defined(MATRIX_PORTAL_M4)
     if (githubOTA != nullptr)
     {
         delete githubOTA;
         githubOTA = nullptr;
     }
+#endif
 }
 
 bool ConfigWebServer::begin()
@@ -99,7 +113,7 @@ bool ConfigWebServer::begin()
         return true; // Already started
     }
 
-    server = new WebServer(80);
+    server = new WebServerType(80);
 
     // Register handlers with lambda wrappers to access 'this'
     server->on("/", HTTP_GET, [this]()
@@ -114,6 +128,8 @@ bool ConfigWebServer::begin()
                { handleClearConfig(); });
     server->on("/update", HTTP_GET, [this]()
                { handleUpdate(); });
+#if !defined(MATRIX_PORTAL_M4)
+    // OTA upload handlers - ESP32 only (uses Update library)
     server->on("/update", HTTP_POST,
                [this]() { handleUpdateComplete(); },  // Completion handler
                [this]() { handleUpdateProgress(); }   // Upload chunk handler
@@ -122,6 +138,7 @@ bool ConfigWebServer::begin()
                { handleCheckUpdate(); });
     server->on("/download-update", HTTP_POST, [this]()
                { handleDownloadUpdate(); });
+#endif
     server->on("/demo", HTTP_GET, [this]()
                { handleDemo(); });
     server->on("/start-demo", HTTP_POST, [this]()
@@ -232,7 +249,10 @@ void ConfigWebServer::handleRoot()
     }
     else if (wifiConnected)
     {
-        html += "<div class='status ok'>WiFi Connected: " + WiFi.localIP().toString() + "</div>";
+        IPAddress ip = WiFi.localIP();
+        char ipStr[16];
+        snprintf(ipStr, sizeof(ipStr), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+        html += "<div class='status ok'>WiFi Connected: " + String(ipStr) + "</div>";
     }
     else
     {
@@ -1007,7 +1027,7 @@ void ConfigWebServer::handleClearConfig()
 
     // Reboot after a short delay
     delay(10000);
-    ESP.restart();
+    systemRestart();
 }
 
 void ConfigWebServer::handleUpdate()
@@ -1161,7 +1181,7 @@ void ConfigWebServer::handleUpdateComplete()
 
         // Reboot after a short delay
         delay(10000);
-        ESP.restart();
+        systemRestart();
     }
 }
 
@@ -1238,6 +1258,9 @@ String escapeJsonString(const char *str)
     }
     return result;
 }
+
+#if !defined(MATRIX_PORTAL_M4)
+// GitHub OTA functions - ESP32 only
 
 void ConfigWebServer::handleCheckUpdate()
 {
@@ -1327,13 +1350,15 @@ void ConfigWebServer::handleDownloadUpdate()
         Serial.println("Update successful, rebooting in 10 seconds...");
 
         delay(10000);
-        ESP.restart();
+        systemRestart();
     }
     else
     {
         server->send(500, "application/json", "{\"success\":false,\"error\":\"Download or installation failed\"}");
     }
 }
+
+#endif // !MATRIX_PORTAL_M4
 
 void ConfigWebServer::handleDemo()
 {
@@ -1561,3 +1586,5 @@ void ConfigWebServer::handleStopDemo()
     server->sendHeader("Location", "/");
     server->send(302, "text/plain", "");
 }
+
+#endif // !MATRIX_PORTAL_M4

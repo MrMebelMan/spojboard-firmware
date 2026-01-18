@@ -1,8 +1,14 @@
 #include "DisplayManager.h"
 #include "../utils/TimeUtils.h"
 #include "../utils/gfxlatin2.h"
-#include <WiFi.h>
 #include <Arduino.h>
+
+// Platform-specific includes
+#if defined(MATRIX_PORTAL_M4)
+    #include <WiFiNINA.h>
+#else
+    #include <WiFi.h>
+#endif
 
 // Font references from src/fonts/ directory
 #include "../fonts/DepartureMono4pt8b.h"
@@ -15,6 +21,7 @@ DisplayManager::DisplayManager()
     fontSmall = &DepartureMono_Regular4pt8b;
     fontMedium = &DepartureMono_Regular5pt8b;
     fontCondensed = &DepartureMono_Condensed5pt8b;
+    ipStringBuffer[0] = '\0';
 }
 
 DisplayManager::~DisplayManager()
@@ -28,6 +35,41 @@ DisplayManager::~DisplayManager()
 
 bool DisplayManager::begin(int brightness)
 {
+#if defined(MATRIX_PORTAL_M4)
+    // Matrix Portal M4 pin configuration for Protomatter
+    // These are the default pins for the Matrix Portal M4 board
+    uint8_t rgbPins[] = {7, 8, 9, 10, 11, 12};
+    uint8_t addrPins[] = {17, 18, 19, 20};  // A, B, C, D (4 pins for 32-row 1:16 scan panels)
+    uint8_t clockPin = 14;
+    uint8_t latchPin = 15;
+    uint8_t oePin = 16;
+
+    display = new Adafruit_Protomatter(
+        PANEL_WIDTH * PANELS_NUMBER,  // Total width (128)
+        4,                             // Bit depth
+        1,                             // Number of parallel chains
+        rgbPins,
+        4,                             // Number of address pins (4 for 32-row 1:16 scan)
+        addrPins,
+        clockPin,
+        latchPin,
+        oePin,
+        true                           // Double-buffer
+    );
+
+    ProtomatterStatus status = display->begin();
+    if (status != PROTOMATTER_OK)
+    {
+        Serial.print("Protomatter FAILED: ");
+        Serial.println((int)status);
+        return false;
+    }
+
+    display->fillScreen(0);
+    display->show();
+
+#else
+    // ESP32-S3 pin configuration for I2S DMA
     HUB75_I2S_CFG::i2s_pins _pins = {
         R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN,
         A_PIN, B_PIN, C_PIN, D_PIN, E_PIN,
@@ -51,10 +93,11 @@ bool DisplayManager::begin(int brightness)
     }
 
     display->setBrightness8(brightness);
-    display->clearScreen();
+    display->fillScreen(0);
+#endif
 
-    // Initialize color constants
-    initColors(display);
+    // Initialize color constants (platform-independent)
+    initColors();
 
     return true;
 }
@@ -63,8 +106,21 @@ void DisplayManager::setBrightness(int brightness)
 {
     if (display)
     {
+#if defined(MATRIX_PORTAL_M4)
+        // Protomatter doesn't have runtime brightness control
+        // Brightness is set via bit depth at initialization
+        (void)brightness;  // Unused on M4
+#else
         display->setBrightness8(brightness);
+#endif
     }
+}
+
+const char* DisplayManager::getLocalIPString()
+{
+    IPAddress ip = WiFi.localIP();
+    sprintf(ipStringBuffer, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+    return ipStringBuffer;
 }
 
 void DisplayManager::drawDeparture(int row, const Departure &dep)
@@ -98,21 +154,25 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     display->setCursor(textX, y + 7);
     display->print(lineConverted);
 
-    // AC indicator (asterisk before destination)
+    // Direction indicator (L/R) before destination based on stop index
     int destX = 22; // Fixed position for all destinations (18px max route width + 4px gap)
-    if (dep.hasAC)
-    {
-        display->setTextColor(COLOR_CYAN);
+    if (dep.stopIndex == 0) {
+        display->setTextColor(COLOR_GREEN);
         display->setCursor(destX, y + 7);
-        display->print("*");
-        destX += 6;
+        display->print("L");
+        destX += 8;
+    } else if (dep.stopIndex == 1) {
+        display->setTextColor(COLOR_BLUE);
+        display->setCursor(destX, y + 7);
+        display->print("R");
+        destX += 8;
     }
 
-    // Destination - use condensed font for long names
+    // Destination - use condensed font for long names, always white
     display->setTextColor(COLOR_WHITE);
 
     int destLen = strlen(destConverted);
-    int normalMaxChars = dep.hasAC ? 14 : 15;
+    int normalMaxChars = (dep.stopIndex <= 1) ? 14 : 15;
     const GFXfont* destFont;
     int maxChars;
 
@@ -122,7 +182,8 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     {
         // Long destination - use condensed font
         destFont = fontCondensed;
-        maxChars = (dep.eta >= 10 || dep.eta < 1) ? 22 : 23;
+        int condensedMax = (dep.eta >= 10 || dep.eta < 1) ? 22 : 23;
+        maxChars = (dep.stopIndex <= 1) ? condensedMax - 1 : condensedMax;
     }
     else
     {
@@ -150,24 +211,14 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     display->setFont(fontMedium);
     display->setCursor(etaCursor, y + 7);
 
-    // ETA color based on time
-    if (dep.eta < 2)
+    // ETA color based on time (red if <= 5 min, white otherwise)
+    if (dep.eta <= 5)
     {
         display->setTextColor(COLOR_RED);
-    }
-    else if (dep.eta < 5)
-    {
-        display->setTextColor(COLOR_YELLOW);
     }
     else
     {
         display->setTextColor(COLOR_WHITE);
-    }
-
-    // Show delay indicator
-    if (dep.isDelayed && dep.delayMinutes > 0)
-    {
-        display->setTextColor(COLOR_ORANGE);
     }
 
     if (dep.eta < 1)
@@ -231,7 +282,7 @@ void DisplayManager::drawDateTime()
 
 void DisplayManager::drawStatus(const char *line1, const char *line2, uint16_t color)
 {
-    display->clearScreen();
+    display->fillScreen(0);
     display->setTextColor(color);
     display->setFont(fontMedium);
 
@@ -245,6 +296,10 @@ void DisplayManager::drawStatus(const char *line1, const char *line2, uint16_t c
         display->setCursor(2, 24);
         display->print(line2);
     }
+
+#if defined(MATRIX_PORTAL_M4)
+    display->show();
+#endif
 }
 
 void DisplayManager::drawOTAProgress(size_t progress, size_t total)
@@ -254,7 +309,7 @@ void DisplayManager::drawOTAProgress(size_t progress, size_t total)
 
     isDrawing = true;
 
-    display->clearScreen();
+    display->fillScreen(0);
 
     // Title
     display->setFont(fontMedium);
@@ -302,6 +357,10 @@ void DisplayManager::drawOTAProgress(size_t progress, size_t total)
     display->setCursor(textX, 31);
     display->print(percentStr);
 
+#if defined(MATRIX_PORTAL_M4)
+    display->show();
+#endif
+
     isDrawing = false;
 }
 
@@ -347,7 +406,7 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
         return;
 
     isDrawing = true;
-    display->clearScreen();
+    display->fillScreen(0);
     delay(1);
 
     // Demo mode has highest priority - bypass all status screens
@@ -368,6 +427,10 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
         drawDateTime();
         delay(1);
 
+#if defined(MATRIX_PORTAL_M4)
+        display->show();
+#endif
+
         isDrawing = false;
         return;
     }
@@ -376,6 +439,9 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
     if (apModeActive)
     {
         drawAPMode(apSSID, apPassword);
+#if defined(MATRIX_PORTAL_M4)
+        display->show();
+#endif
         isDrawing = false;
         return;
     }
@@ -391,7 +457,7 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
     if (!apiKeyConfigured)
     {
         char ipStr[32];
-        sprintf(ipStr, "http://%s", WiFi.localIP().toString().c_str());
+        sprintf(ipStr, "http://%s", getLocalIPString());
         drawStatus("Setup Required", ipStr, COLOR_CYAN);
         isDrawing = false;
         return;
@@ -427,6 +493,10 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
     drawDateTime();
     delay(1);
 
+#if defined(MATRIX_PORTAL_M4)
+    display->show();
+#endif
+
     isDrawing = false;
 }
 
@@ -436,7 +506,7 @@ void DisplayManager::drawDemo(const Departure* departures, int departureCount, c
         return;
 
     isDrawing = true;
-    display->clearScreen();
+    display->fillScreen(0);
     delay(1);
 
     // Draw sample departures (top 1-3 rows)
@@ -450,6 +520,10 @@ void DisplayManager::drawDemo(const Departure* departures, int departureCount, c
     // Draw date/time status bar
     drawDateTime();
     delay(1);
+
+#if defined(MATRIX_PORTAL_M4)
+    display->show();
+#endif
 
     isDrawing = false;
 }

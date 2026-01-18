@@ -1,7 +1,13 @@
 #ifndef WIFIMANAGER_H
 #define WIFIMANAGER_H
 
-#include <WiFi.h>
+// Platform-specific WiFi includes
+#if defined(MATRIX_PORTAL_M4)
+    #include <WiFiNINA.h>
+#else
+    #include <WiFi.h>
+#endif
+
 #include "../config/AppConfig.h"
 
 // ============================================================================

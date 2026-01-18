@@ -45,6 +45,7 @@ TransitAPI::APIResult BvgAPI::fetchDepartures(const Config &config)
 
     char *stopId = strtok(stopIdsCopy, ",");
     bool firstStop = true;
+    int stopIndex = 0;
 
     while (stopId != NULL && tempCount < MAX_TEMP_DEPARTURES)
     {
@@ -58,12 +59,13 @@ TransitAPI::APIResult BvgAPI::fetchDepartures(const Config &config)
             continue;
         }
 
-        querySingleStop(stopId, config, tempDepartures, tempCount, result.stopName, firstStop);
+        querySingleStop(stopId, config, tempDepartures, tempCount, result.stopName, firstStop, stopIndex);
 
         // Rate limiting: 1-second delay between API calls
         delay(1000);
 
         stopId = strtok(NULL, ",");
+        stopIndex++;
     }
 
     // Sort all collected departures by ETA (ascending)
@@ -101,7 +103,7 @@ TransitAPI::APIResult BvgAPI::fetchDepartures(const Config &config)
 
 bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
                              Departure *tempDepartures, int &tempCount,
-                             char *stopName, bool &isFirstStop)
+                             char *stopName, bool &isFirstStop, int stopIndex)
 {
     // Build URL with 'when' parameter to offset query time by minDepartureTime
     // Format: https://v6.bvg.transport.rest/stops/{stopId}/departures?duration=120&results=12&when={unix_timestamp}
@@ -237,7 +239,7 @@ bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
         if (tempCount >= MAX_TEMP_DEPARTURES)
             break;
 
-        parseDepartureObject(depJson, tempDepartures, tempCount);
+        parseDepartureObject(depJson, tempDepartures, tempCount, stopIndex);
     }
 
     logTimestamp();
@@ -248,8 +250,11 @@ bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
     return true;
 }
 
-void BvgAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount)
+void BvgAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount, int stopIndex)
 {
+    // Set stop index
+    tempDepartures[tempCount].stopIndex = stopIndex;
+
     // Extract line name (from line.name)
     if (!depJson.containsKey("line") || !depJson["line"].containsKey("name"))
     {

@@ -1,10 +1,19 @@
 #ifndef DISPLAYMANAGER_H
 #define DISPLAYMANAGER_H
 
-#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include "../config/AppConfig.h"
 #include "../api/DepartureData.h"
 #include "DisplayColors.h"
+#include <Adafruit_GFX.h>
+
+// Platform-specific display includes
+#if defined(MATRIX_PORTAL_M4)
+    #include <Adafruit_Protomatter.h>
+    typedef Adafruit_Protomatter DisplayType;
+#else
+    #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+    typedef MatrixPanel_I2S_DMA DisplayType;
+#endif
 
 // Font references
 extern const GFXfont DepartureMono_Regular4pt8b;
@@ -80,7 +89,12 @@ public:
     /**
      * Get pointer to display object (for direct access if needed)
      */
-    MatrixPanel_I2S_DMA* getDisplay() { return display; }
+    DisplayType* getDisplay() { return display; }
+
+    /**
+     * Get local IP address as string (platform-independent)
+     */
+    const char* getLocalIPString();
 
     /**
      * Draw demo mode display (repurposed from drawFontTest)
@@ -92,9 +106,10 @@ public:
     void drawDemo(const Departure* departures, int departureCount, const char* stopName);
 
 private:
-    MatrixPanel_I2S_DMA* display;
+    DisplayType* display;
     bool isDrawing;
     const Config* config;
+    char ipStringBuffer[32];  // Buffer for IP string
 
     const GFXfont* fontSmall;
     const GFXfont* fontMedium;

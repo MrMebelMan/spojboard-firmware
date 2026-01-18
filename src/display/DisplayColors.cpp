@@ -1,6 +1,9 @@
 #include "DisplayColors.h"
 #include <string.h>
 
+// Helper macro for RGB565 conversion (same as Adafruit_GFX::color565)
+#define RGB565(r, g, b) (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))
+
 // ============================================================================
 // Color Constants (initialized by initColors)
 // ============================================================================
@@ -19,17 +22,17 @@ uint16_t COLOR_CYAN;
 // Color Initialization
 // ============================================================================
 
-void initColors(MatrixPanel_I2S_DMA *display)
+void initColors()
 {
-    COLOR_WHITE = display->color565(255, 255, 255);
-    COLOR_YELLOW = display->color565(255, 255, 0);
-    COLOR_RED = display->color565(255, 0, 0);
-    COLOR_GREEN = display->color565(0, 255, 0);
-    COLOR_BLUE = display->color565(0, 0, 255);
-    COLOR_ORANGE = display->color565(255, 165, 0);
-    COLOR_PURPLE = display->color565(128, 0, 128);
-    COLOR_BLACK = display->color565(0, 0, 0);
-    COLOR_CYAN = display->color565(0, 255, 255);
+    COLOR_WHITE = RGB565(255, 255, 255);
+    COLOR_YELLOW = RGB565(255, 255, 0);
+    COLOR_RED = RGB565(255, 0, 0);
+    COLOR_GREEN = RGB565(0, 255, 0);
+    COLOR_BLUE = RGB565(0, 0, 255);
+    COLOR_ORANGE = RGB565(255, 165, 0);
+    COLOR_PURPLE = RGB565(128, 0, 128);
+    COLOR_BLACK = RGB565(0, 0, 0);
+    COLOR_CYAN = RGB565(0, 255, 255);
 }
 
 // ============================================================================

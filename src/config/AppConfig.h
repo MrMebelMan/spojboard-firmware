@@ -1,8 +1,10 @@
 #ifndef APPCONFIG_H
 #define APPCONFIG_H
 
-#include <Preferences.h>
 #include <cstdint>
+
+// Note: Platform-specific storage includes (FlashStorage_SAMD, Preferences)
+// are in AppConfig.cpp only to avoid multiple definition errors
 
 // ============================================================================
 // Firmware Version
@@ -46,9 +48,9 @@
 #define OE_PIN 14
 #define CLK_PIN 2
 
-// Default WiFi credentials (for initial setup)
-#define DEFAULT_WIFI_SSID "Your WiFi SSID"
-#define DEFAULT_WIFI_PASSWORD "Your WiFi Password"
+// Private credentials (WiFi, API keys, stop IDs)
+// Copy credentials.h.example to credentials.h and fill in your values
+#include "credentials.h"
 
 // ============================================================================
 // Configuration Structure
@@ -72,6 +74,7 @@ struct Config
     char lineColorMap[256]; // Line color mappings (format: "A=GREEN,B=YELLOW,9*=CYAN")
     char city[16];          // Transit city: "Prague" or "Berlin"
     bool debugMode;         // Enable telnet logging and verbose output
+    bool noApFallback;      // If true, keep retrying WiFi instead of falling back to AP mode
     bool configured;
 };
 

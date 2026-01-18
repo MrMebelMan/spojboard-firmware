@@ -3,3 +3,7 @@
 .claude
 .DS_Store
 dist/
+*.txt
+
+# Private credentials
+src/config/credentials.h

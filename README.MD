@@ -1,9 +1,15 @@
 # SpojBoard - Smart Panel for Onward Journeys
 
-An ESP32-based LED matrix display showing real-time transit departures. Supports multiple transit networks: Prague (Golemio API) and Berlin (BVG API).
+An LED matrix display showing real-time transit departures. Supports multiple hardware platforms and transit networks.
 
 **SPOJ** = **S**mart **P**anel for **O**nward **J**ourneys (also "spoj" = connection/service in Czech)
-Standalone operation with web-based configuration, no external server required.
+
+| Platform | Transit Networks | Web Config | OTA Updates |
+|----------|-----------------|------------|-------------|
+| **MatrixPortal ESP32-S3** | Prague + Berlin | ✅ Full UI | ✅ GitHub + Manual |
+| **Matrix Portal M4** | Prague only | ❌ Hardcoded | ❌ Manual only |
+
+Standalone operation, no external server required.
 
 ![SpojBoard Device](docs/images/spojboard-device.jpg)
 
@@ -38,14 +44,33 @@ Standalone operation with web-based configuration, no external server required.
 
 ## Hardware
 
-### Recommended Setup
+### Option 1: MatrixPortal ESP32-S3 (Recommended)
 
 - **Controller**: Adafruit MatrixPortal ESP32-S3
 - **Display**: 2× HUB75 64×32 LED Matrix panels (128×32 total resolution)
 - **Power Supply**: Minimum 5V 3A switching power supply
-  - Can also be powered by a 5V 3A USB-C charger: wire the power cables from the displays to MatrixPortal's 5V/GND terminals and power through its USB-C port.
+- **Features**: Full web UI, captive portal, OTA updates, Prague + Berlin support
 
-### Alternative: Generic ESP32-S3
+### Option 2: Matrix Portal M4
+
+- **Controller**: Adafruit Matrix Portal M4 (SAMD51 + ESP32 WiFi coprocessor)
+- **Display**: 2× HUB75 64×32 LED Matrix panels (128×32 total resolution)
+- **Power Supply**: Minimum 5V 3A switching power supply
+- **Limitations**:
+  - Prague/Golemio API only (no Berlin support)
+  - No web configuration UI - credentials hardcoded in source
+  - No GitHub OTA updates (manual .bin upload only)
+  - No captive portal for WiFi setup
+
+**M4 Configuration**: Edit these in `src/config/AppConfig.h` before building:
+```cpp
+#define DEFAULT_WIFI_SSID "YourNetwork"
+#define DEFAULT_WIFI_PASSWORD "YourPassword"
+#define DEFAULT_GOLEMIO_API_KEY "your-api-key"
+```
+And set your stop ID in `src/config/AppConfig.cpp`.
+
+### Option 3: Generic ESP32-S3
 
 SpojBoard firmware can also run on generic ESP32-S3 development boards with custom wiring. See [Generic ESP32-S3 Guide](docs/GENERIC_ESP32S3.md) for details.
 
@@ -68,11 +93,11 @@ HUB75 LED matrix panels require external 5V power.
 
 ## Quick Start
 
-### First Time Setup (AP Mode)
+### ESP32-S3: First Time Setup (AP Mode)
 
 1. **Build & Flash the Firmware**
    ```bash
-   pio run -t upload
+   pio run -e adafruit_matrixportal_esp32s3 -t upload
    ```
 
 2. **Connect to Setup AP**
@@ -100,7 +125,7 @@ HUB75 LED matrix panels require external 5V power.
    - Find its new IP address on the display or your router
    - Departures will start showing automatically
 
-### If WiFi Fails
+### If WiFi Fails (ESP32-S3)
 
 If the device can't connect to WiFi (wrong password, network down, etc.), it will automatically:
 1. Stop trying after 20 attempts (~10 seconds)
@@ -108,7 +133,33 @@ If the device can't connect to WiFi (wrong password, network down, etc.), it wil
 3. Display the credentials on the LED matrix
 4. Wait for you to configure new WiFi settings
 
-## Web Interface
+### Matrix Portal M4: Setup
+
+1. **Edit Configuration** in `src/config/AppConfig.h`:
+   ```cpp
+   #define DEFAULT_WIFI_SSID "YourNetwork"
+   #define DEFAULT_WIFI_PASSWORD "YourPassword"
+   #define DEFAULT_GOLEMIO_API_KEY "your-golemio-api-key"
+   ```
+
+2. **Set Stop ID** in `src/config/AppConfig.cpp`:
+   ```cpp
+   strlcpy(config.pragueStopIds, "U899Z3P", sizeof(config.pragueStopIds));
+   ```
+
+3. **Build & Flash**:
+   ```bash
+   pio run -e adafruit_matrix_portal_m4 -t upload
+   ```
+
+4. **Monitor** (optional):
+   ```bash
+   pio device monitor
+   ```
+
+The device will connect to WiFi and start showing departures. To change configuration, edit the source files and re-flash.
+
+## Web Interface (ESP32-S3 Only)
 
 The built-in web server provides:
 
@@ -278,7 +329,25 @@ All firmware updates (both methods):
 
 For detailed information about the data flow pipeline, memory allocation, and design decisions, see **[Architecture & Data Flow](docs/ARCHITECTURE.md)**.
 
-### AP Mode Credentials
+### Platform Comparison
+
+| Feature | ESP32-S3 | Matrix Portal M4 |
+|---------|----------|------------------|
+| MCU | ESP32-S3 (native WiFi) | SAMD51 + ESP32 coprocessor |
+| Display Library | ESP32-HUB75-MatrixPanel-I2S-DMA | Adafruit Protomatter |
+| WiFi Library | Native ESP32 WiFi | WiFiNINA |
+| HTTP Client | HTTPClient | ArduinoHttpClient |
+| Storage | NVS Preferences | FlashStorage_SAMD |
+| Web Server | WebServer | ❌ Not available |
+| Captive Portal | ✅ DNSServer | ❌ Not available |
+| Prague API | ✅ Golemio | ✅ Golemio |
+| Berlin API | ✅ BVG | ❌ Excluded |
+| GitHub OTA | ✅ Full support | ❌ Not available |
+| Telnet Logging | ✅ ESPTelnet | ❌ Not available |
+| RAM Usage | ~70KB / 327KB (21%) | ~16KB / 192KB (8%) |
+| Flash Usage | ~1.2MB / 1.3MB (95%) | ~106KB / 508KB (21%) |
+
+### AP Mode Credentials (ESP32-S3 Only)
 - SSID: `SpojBoard-XXXX` (XXXX = last 4 chars of MAC address)
 - Password: 8 random alphanumeric characters (regenerated each time)
 - IP: `192.168.4.1`

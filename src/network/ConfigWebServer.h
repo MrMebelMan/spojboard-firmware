@@ -1,11 +1,9 @@
 #ifndef CONFIGWEBSERVER_H
 #define CONFIGWEBSERVER_H
 
-#include <WebServer.h>
+#include <Arduino.h>
 #include "../config/AppConfig.h"
 #include "../api/DepartureData.h"
-#include "OTAUpdateManager.h"
-#include "GitHubOTA.h"
 
 // Forward declaration
 class DisplayManager;
@@ -13,6 +11,49 @@ class DisplayManager;
 // ============================================================================
 // Configuration Web Server
 // ============================================================================
+
+#if defined(MATRIX_PORTAL_M4)
+// ==========================================================================
+// M4 Stub Implementation - No web server, config via serial/hardcoded
+// ==========================================================================
+
+class ConfigWebServer
+{
+public:
+    typedef void (*ConfigSaveCallback)(const Config& newConfig, bool wifiChanged);
+    typedef void (*RefreshCallback)();
+    typedef void (*RebootCallback)();
+    typedef void (*DemoStartCallback)(const Departure* demoDepartures, int demoCount);
+    typedef void (*DemoStopCallback)();
+
+    ConfigWebServer() {}
+    ~ConfigWebServer() {}
+
+    bool begin() { Serial.println("Web server not available on M4"); return true; }
+    void stop() {}
+    void handleClient() {}
+
+    void setCallbacks(ConfigSaveCallback, RefreshCallback, RebootCallback,
+                     DemoStartCallback = nullptr, DemoStopCallback = nullptr) {}
+
+    void setDisplayManager(DisplayManager*) {}
+
+    void updateState(const Config*, bool, bool, const char*, const char*, int,
+                    bool, const char*, int, const char*) {}
+
+    void* getServer() { return nullptr; }
+};
+
+#else
+// ==========================================================================
+// ESP32 Full Implementation
+// ==========================================================================
+
+#include <WebServer.h>
+#include "OTAUpdateManager.h"
+#include "GitHubOTA.h"
+
+typedef WebServer WebServerType;
 
 /**
  * Web server for device configuration and status display.
@@ -31,60 +72,25 @@ public:
     ConfigWebServer();
     ~ConfigWebServer();
 
-    /**
-     * Initialize and start web server
-     * @return true if server started successfully
-     */
     bool begin();
-
-    /**
-     * Stop web server
-     */
     void stop();
-
-    /**
-     * Handle client requests (call from main loop)
-     */
     void handleClient();
 
-    /**
-     * Set callback functions for configuration events
-     */
     void setCallbacks(ConfigSaveCallback onSave, RefreshCallback onRefresh, RebootCallback onReboot,
                      DemoStartCallback onDemoStart = nullptr, DemoStopCallback onDemoStop = nullptr);
 
-    /**
-     * Set display manager for OTA progress updates
-     * @param displayMgr Pointer to DisplayManager instance
-     */
     void setDisplayManager(DisplayManager* displayMgr);
 
-    /**
-     * Update current state for status display
-     * @param config Current configuration
-     * @param wifiConnected WiFi connection status
-     * @param apModeActive AP mode status
-     * @param apSSID AP network name (if in AP mode)
-     * @param apPassword AP password (if in AP mode)
-     * @param apClientCount Number of connected AP clients
-     * @param apiError API error status
-     * @param apiErrorMsg API error message
-     * @param departureCount Number of departures
-     * @param stopName Current stop name
-     */
     void updateState(const Config* config,
                     bool wifiConnected, bool apModeActive,
                     const char* apSSID, const char* apPassword, int apClientCount,
                     bool apiError, const char* apiErrorMsg,
                     int departureCount, const char* stopName);
 
-    /**
-     * Get web server instance for direct access
-     */
-    WebServer* getServer() { return server; }
+    WebServerType* getServer() { return server; }
 
 private:
-    WebServer* server;
+    WebServerType* server;
     OTAUpdateManager* otaManager;
     GitHubOTA* githubOTA;
     DisplayManager* displayManager;
@@ -113,25 +119,27 @@ private:
     void handleSave();
     void handleRefresh();
     void handleReboot();
-    void handleClearConfig();      // POST: clear all settings (factory reset)
-    void handleUpdate();           // GET: show OTA upload form
-    void handleUpdateProgress();   // POST: handle firmware upload chunks
-    void handleUpdateComplete();   // POST: handle firmware upload completion
-    void handleCheckUpdate();      // GET: check GitHub for updates (AJAX)
-    void handleDownloadUpdate();   // POST: download and install from GitHub (AJAX)
-    void handleDemo();             // GET: show demo configuration page
-    void handleStartDemo();        // POST: start demo mode with sample data
-    void handleStopDemo();         // POST: stop demo mode and resume normal operation
+    void handleClearConfig();
+    void handleUpdate();
+    void handleUpdateProgress();
+    void handleUpdateComplete();
+    void handleCheckUpdate();
+    void handleDownloadUpdate();
+    void handleDemo();
+    void handleStartDemo();
+    void handleStopDemo();
     void handleNotFound();
 
-    // OTA progress callbacks (static for use as function pointers)
+    // OTA progress callbacks
     static void otaProgressCallback(size_t progress, size_t total);
     static void githubOtaProgressCallback(size_t progress, size_t total);
-    static ConfigWebServer* instanceForCallback;  // Static instance pointer for callbacks
+    static ConfigWebServer* instanceForCallback;
 
     // HTML templates
     static const char* HTML_HEADER;
     static const char* HTML_FOOTER;
 };
+
+#endif // MATRIX_PORTAL_M4
 
 #endif // CONFIGWEBSERVER_H

@@ -1,4 +1,5 @@
 #include "DepartureData.h"
+#include "../utils/TimeUtils.h"
 #include <string.h>
 
 // ============================================================================
@@ -57,8 +58,7 @@ int compareDepartures(const void *a, const void *b)
 
 int calculateETA(time_t departureTime)
 {
-    time_t now;
-    time(&now);
+    time_t now = getCurrentEpochTime();
     int diffSec = difftime(departureTime, now);
     return (diffSec > 0) ? (diffSec / 60) : 0;
 }

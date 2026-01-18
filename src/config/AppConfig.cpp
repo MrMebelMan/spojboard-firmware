@@ -2,6 +2,112 @@
 #include "../utils/Logger.h"
 #include <Arduino.h>
 
+// Platform-specific storage includes (must be in .cpp only to avoid multiple definition)
+#if defined(MATRIX_PORTAL_M4)
+#include <FlashStorage_SAMD.h>
+#else
+#include <Preferences.h>
+#endif
+
+#if defined(MATRIX_PORTAL_M4)
+// ============================================================================
+// M4 Storage Implementation (FlashStorage_SAMD)
+// ============================================================================
+
+// Storage signature for validation
+#define CONFIG_SIGNATURE 0x53504F4A  // "SPOJ" in hex
+
+struct StoredConfig {
+    uint32_t signature;
+    Config config;
+};
+
+// Declare flash storage - must be at file scope
+FlashStorage(config_storage, StoredConfig);
+
+void loadConfig(Config& config)
+{
+    StoredConfig stored;
+    config_storage.read(stored);
+
+    // Check if storage has valid data
+    if (stored.signature != CONFIG_SIGNATURE)
+    {
+        // Initialize with defaults
+        memset(&config, 0, sizeof(Config));
+        strlcpy(config.wifiSsid, DEFAULT_WIFI_SSID, sizeof(config.wifiSsid));
+        strlcpy(config.wifiPassword, DEFAULT_WIFI_PASSWORD, sizeof(config.wifiPassword));
+        strlcpy(config.pragueApiKey, DEFAULT_GOLEMIO_API_KEY, sizeof(config.pragueApiKey));
+        strlcpy(config.pragueStopIds, DEFAULT_PRAGUE_STOP_IDS, sizeof(config.pragueStopIds));
+        strlcpy(config.city, "Prague", sizeof(config.city));
+        config.refreshInterval = 90;
+        config.numDepartures = 3;
+        config.minDepartureTime = 3;
+        config.brightness = 45;
+        config.debugMode = false;
+        config.noApFallback = true;
+        config.configured = true;  // Mark as configured since we have hardcoded credentials
+
+        Serial.println("Config: No valid data found, using defaults");
+    }
+    else
+    {
+        // Copy stored config
+        memcpy(&config, &stored.config, sizeof(Config));
+    }
+
+    // Log loaded config
+    logTimestamp();
+    Serial.println("Config loaded:");
+    Serial.print("  SSID: ");
+    Serial.println(config.wifiSsid);
+    Serial.print("  City: ");
+    Serial.println(config.city);
+    Serial.print("  Prague API Key: ");
+    Serial.println(strlen(config.pragueApiKey) > 0 ? "Configured" : "Not set");
+    Serial.print("  Prague Stops: ");
+    Serial.println(config.pragueStopIds);
+    Serial.print("  Berlin Stops: ");
+    Serial.println(strlen(config.berlinStopIds) > 0 ? config.berlinStopIds : "Not set");
+    Serial.print("  Refresh: ");
+    Serial.print(config.refreshInterval);
+    Serial.println("s");
+    Serial.print("  Configured: ");
+    Serial.println(config.configured ? "Yes" : "No");
+}
+
+void saveConfig(const Config& config)
+{
+    StoredConfig stored;
+    stored.signature = CONFIG_SIGNATURE;
+    memcpy(&stored.config, &config, sizeof(Config));
+
+    // Mark as configured
+    stored.config.configured = true;
+
+    config_storage.write(stored);
+
+    logTimestamp();
+    debugPrintln("Config saved");
+}
+
+void clearConfig()
+{
+    StoredConfig stored;
+    stored.signature = 0;  // Invalid signature = cleared
+    memset(&stored.config, 0, sizeof(Config));
+
+    config_storage.write(stored);
+
+    logTimestamp();
+    debugPrintln("All configuration cleared - device will boot into AP mode on restart");
+}
+
+#else
+// ============================================================================
+// ESP32 Storage Implementation (NVS Preferences)
+// ============================================================================
+
 void loadConfig(Config& config)
 {
     Preferences preferences;
@@ -12,7 +118,7 @@ void loadConfig(Config& config)
 
     // Load per-city configuration fields
     strlcpy(config.pragueApiKey, preferences.getString("pragueApiKey", "").c_str(), sizeof(config.pragueApiKey));
-    strlcpy(config.pragueStopIds, preferences.getString("pragueStopIds", "U693Z2P").c_str(), sizeof(config.pragueStopIds));
+    strlcpy(config.pragueStopIds, preferences.getString("pragueStopIds", DEFAULT_PRAGUE_STOP_IDS).c_str(), sizeof(config.pragueStopIds));
     strlcpy(config.berlinStopIds, preferences.getString("berlinStopIds", "").c_str(), sizeof(config.berlinStopIds));
 
     // Backward compatibility: Migrate old config format to new per-city fields
@@ -40,13 +146,14 @@ void loadConfig(Config& config)
         }
     }
 
-    config.refreshInterval = preferences.getInt("refresh", 60);  // Increased to 60s to reduce API load
+    config.refreshInterval = preferences.getInt("refresh", 90);
     config.numDepartures = preferences.getInt("numDeps", 3);     // Display rows (1-3)
     config.minDepartureTime = preferences.getInt("minDepTime", 3);
     config.brightness = preferences.getInt("brightness", 90);
     strlcpy(config.lineColorMap, preferences.getString("lineColorMap", "").c_str(), sizeof(config.lineColorMap));
     strlcpy(config.city, preferences.getString("city", "Prague").c_str(), sizeof(config.city));  // Default: Prague for backward compatibility
     config.debugMode = preferences.getBool("debugMode", false);  // Default: disabled
+    config.noApFallback = preferences.getBool("noApFallback", true);  // Default: keep retrying WiFi
     config.configured = preferences.getBool("configured", false);
 
     preferences.end();
@@ -101,6 +208,7 @@ void saveConfig(const Config& config)
     preferences.putString("lineColorMap", config.lineColorMap);
     preferences.putString("city", config.city);
     preferences.putBool("debugMode", config.debugMode);
+    preferences.putBool("noApFallback", config.noApFallback);
     preferences.putBool("configured", true);
 
     preferences.end();
@@ -122,3 +230,5 @@ void clearConfig()
     logTimestamp();
     debugPrintln("All configuration cleared - device will boot into AP mode on restart");
 }
+
+#endif // MATRIX_PORTAL_M4

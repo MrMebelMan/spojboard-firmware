@@ -28,6 +28,10 @@ void logMemory(const char *location)
     logTimestamp();
     Serial.print("MEM@");
     Serial.print(location);
+#if defined(MATRIX_PORTAL_M4)
+    // M4 doesn't have heap monitoring
+    Serial.println(": (not available on M4)");
+#else
     Serial.print(": Free=");
     Serial.print(ESP.getFreeHeap());
     Serial.print(" Min=");
@@ -41,6 +45,7 @@ void logMemory(const char *location)
                  location, ESP.getFreeHeap(), ESP.getMinFreeHeap());
         TelnetLogger::getInstance().print(buf);
     }
+#endif
 }
 
 void debugPrint(const char* message)

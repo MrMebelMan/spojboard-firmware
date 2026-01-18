@@ -8,11 +8,22 @@
 #include "config/AppConfig.h"
 #include "api/DepartureData.h"
 #include "api/GolemioAPI.h"
+#if !defined(MATRIX_PORTAL_M4)
 #include "api/BvgAPI.h"
+#endif
 #include "display/DisplayManager.h"
 #include "network/WiFiManager.h"
 #include "network/CaptivePortal.h"
 #include "network/ConfigWebServer.h"
+
+// Platform-specific helpers
+#if defined(MATRIX_PORTAL_M4)
+    static inline void systemRestart() { NVIC_SystemReset(); }
+    static inline uint32_t getFreeHeap() { return 0; }  // Not available on M4
+#else
+    static inline void systemRestart() { ESP.restart(); }
+    static inline uint32_t getFreeHeap() { return ESP.getFreeHeap(); }
+#endif
 
 // Hardware configuration and defaults are now in config/AppConfig.h
 
@@ -24,7 +35,9 @@ WiFiManager wifiManager;
 CaptivePortal captivePortal;
 ConfigWebServer webServer;
 GolemioAPI golemioAPI;  // Prague transit API
+#if !defined(MATRIX_PORTAL_M4)
 BvgAPI bvgAPI;          // Berlin transit API
+#endif
 TransitAPI* transitAPI = nullptr;  // Pointer to active API (selected at runtime)
 
 // ============================================================================
@@ -70,8 +83,7 @@ void recalculateETAs()
 {
     // Recalculate ETAs from cached departureTime timestamps
     // Filter out stale departures (past their departure time)
-    time_t now;
-    time(&now);
+    time_t now = getCurrentEpochTime();
 
     logTimestamp();
     char startMsg[64];
@@ -227,7 +239,7 @@ void onConfigSave(const Config &newConfig, bool wifiChanged)
     {
         // Restart to apply new WiFi settings
         delay(1000);
-        ESP.restart();
+        systemRestart();
     }
     else
     {
@@ -244,7 +256,7 @@ void onRefresh()
 void onReboot()
 {
     delay(500);
-    ESP.restart();
+    systemRestart();
 }
 
 void onDemoStart(const Departure* demoDepartures, int demoCount)
@@ -299,6 +311,11 @@ void setup()
     initLogger(&config);
 
     // Select transit API based on city configuration
+#if defined(MATRIX_PORTAL_M4)
+    // M4 only supports Prague (Golemio) API
+    transitAPI = &golemioAPI;
+    Serial.println("Using Prague Golemio API");
+#else
     if (strcmp(config.city, "Berlin") == 0)
     {
         transitAPI = &bvgAPI;
@@ -309,6 +326,7 @@ void setup()
         transitAPI = &golemioAPI;
         Serial.println("Using Prague Golemio API");
     }
+#endif
 
     // Set up API status callback for display updates
     transitAPI->setStatusCallback(onAPIStatus);
@@ -324,8 +342,18 @@ void setup()
 
     displayManager.drawStatus("Starting SpojBoard...", "FW v" FIRMWARE_RELEASE, COLOR_WHITE);
 
-    // Try to connect to WiFi (will fall back to AP mode if fails)
-    if (!wifiManager.connectSTA(config, 20, 500))
+    // Try to connect to WiFi
+    bool wifiConnected = wifiManager.connectSTA(config, 20, 500);
+
+    // If noApFallback is true, keep retrying WiFi instead of falling back to AP
+    while (!wifiConnected && config.noApFallback)
+    {
+        displayManager.drawStatus("WiFi Failed!", "Retrying...", COLOR_RED);
+        delay(5000);
+        wifiConnected = wifiManager.connectSTA(config, 20, 500);
+    }
+
+    if (!wifiConnected)
     {
         // Connection failed, start AP mode
         displayManager.drawStatus("WiFi Failed!", "Starting AP mode...", COLOR_RED);
@@ -348,7 +376,8 @@ void setup()
     {
         // WiFi connected successfully
         char ipStr[32];
-        sprintf(ipStr, "IP: %s", WiFi.localIP().toString().c_str());
+        IPAddress ip = WiFi.localIP();
+        snprintf(ipStr, sizeof(ipStr), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
         displayManager.drawStatus("WiFi Connected!", ipStr, COLOR_GREEN);
         delay(1500);
 
@@ -369,11 +398,13 @@ void setup()
         debugPrintln("Web server failed to start!");
     }
 
-    // Setup captive portal detection handlers
+    // Setup captive portal detection handlers (ESP32 only - M4 has no web server)
+#if !defined(MATRIX_PORTAL_M4)
     if (wifiManager.isAPMode())
     {
         captivePortal.setupDetectionHandlers(webServer.getServer());
     }
+#endif
 
     // Setup NTP time if connected to WiFi
     if (wifiManager.isConnected() && !wifiManager.isAPMode())
@@ -534,11 +565,11 @@ void loop()
     {
         lastStatusLog = millis();
         char statusMsg[128];
-        snprintf(statusMsg, sizeof(statusMsg), "STATUS: WiFi=%s | AP=%s | Deps=%d | Heap=%u",
+        snprintf(statusMsg, sizeof(statusMsg), "STATUS: WiFi=%s | AP=%s | Deps=%d | Heap=%lu",
                  wifiManager.isConnected() ? "OK" : "FAIL",
                  wifiManager.isAPMode() ? "ON" : "OFF",
                  departureCount,
-                 ESP.getFreeHeap());
+                 (unsigned long)getFreeHeap());
         logTimestamp();
         debugPrintln(statusMsg);
     }

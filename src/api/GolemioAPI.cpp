@@ -1,8 +1,41 @@
 #include "GolemioAPI.h"
 #include "../utils/Logger.h"
-#include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <time.h>
+
+// Simple ISO8601 timestamp parser (strptime replacement for platforms without it)
+// Parses format: "YYYY-MM-DDTHH:MM:SS"
+static bool parseISO8601(const char* timestamp, struct tm* tm)
+{
+    if (timestamp == nullptr || tm == nullptr) return false;
+
+    memset(tm, 0, sizeof(struct tm));
+
+    // Parse: YYYY-MM-DDTHH:MM:SS
+    int year, month, day, hour, minute, second;
+    if (sscanf(timestamp, "%d-%d-%dT%d:%d:%d", &year, &month, &day, &hour, &minute, &second) != 6)
+    {
+        return false;
+    }
+
+    tm->tm_year = year - 1900;  // Years since 1900
+    tm->tm_mon = month - 1;     // Months since January (0-11)
+    tm->tm_mday = day;
+    tm->tm_hour = hour;
+    tm->tm_min = minute;
+    tm->tm_sec = second;
+    tm->tm_isdst = -1;          // Let mktime determine DST
+
+    return true;
+}
+
+// Platform-specific HTTP client includes
+#if defined(MATRIX_PORTAL_M4)
+    #include <WiFiNINA.h>
+    #include <ArduinoHttpClient.h>
+#else
+    #include <HTTPClient.h>
+#endif
 
 GolemioAPI::GolemioAPI() : statusCallback(nullptr)
 {
@@ -44,6 +77,7 @@ TransitAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
 
     char *stopId = strtok(stopIdsCopy, ",");
     bool firstStop = true;
+    int stopIndex = 0;
 
     while (stopId != NULL && tempCount < MAX_TEMP_DEPARTURES)
     {
@@ -57,11 +91,12 @@ TransitAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
             continue;
         }
 
-        querySingleStop(stopId, config, tempDepartures, tempCount, result.stopName, firstStop);
+        querySingleStop(stopId, config, tempDepartures, tempCount, result.stopName, firstStop, stopIndex);
 
         delay(1000);
 
         stopId = strtok(NULL, ",");
+        stopIndex++;
     }
 
     // Sort all collected departures by ETA
@@ -105,30 +140,69 @@ TransitAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
 
 bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
                                  Departure *tempDepartures, int &tempCount,
-                                 char *stopName, bool &isFirstStop)
+                                 char *stopName, bool &isFirstStop, int stopIndex)
 {
     char queryMsg[96];
     snprintf(queryMsg, sizeof(queryMsg), "API: Querying stop %s", stopId);
     logTimestamp();
     debugPrintln(queryMsg);
 
-    HTTPClient http;
-    char url[512];
-
-    // Query each stop with MAX_DEPARTURES to ensure good caching and sorting
-    snprintf(url, sizeof(url),
-             "https://api.golemio.cz/v2/pid/departureboards?ids=%s&total=%d&preferredTimezone=Europe/Prague&minutesBefore=%d&minutesAfter=120",
+    // Build the path for the API request
+    char path[256];
+    snprintf(path, sizeof(path),
+             "/v2/pid/departureboards?ids=%s&total=%d&preferredTimezone=Europe/Prague&minutesBefore=%d&minutesAfter=120",
              stopId,
              MAX_DEPARTURES,
              config.minDepartureTime > 0 ? config.minDepartureTime * -1 : 0);
+
+    const int MAX_RETRIES = 3;
+    int httpCode = -1;
+    String payload;
+
+#if defined(MATRIX_PORTAL_M4)
+    // M4 uses ArduinoHttpClient with WiFiSSLClient
+    WiFiSSLClient sslClient;
+    HttpClient http(sslClient, "api.golemio.cz", 443);
+    http.setTimeout(HTTP_TIMEOUT_MS);
+
+    for (int retry = 0; retry < MAX_RETRIES; retry++)
+    {
+        if (retry > 0)
+        {
+            int delayMs = 2000 * retry;
+            char statusMsg[64];
+            snprintf(statusMsg, sizeof(statusMsg), "API Retry %d/%d", retry, MAX_RETRIES);
+            if (statusCallback) statusCallback(statusMsg);
+            delay(delayMs);
+        }
+
+        http.beginRequest();
+        http.get(path);
+        http.sendHeader("x-access-token", config.pragueApiKey);
+        http.sendHeader("Content-Type", "application/json");
+        http.endRequest();
+
+        httpCode = http.responseStatusCode();
+
+        if (httpCode == 200)
+        {
+            payload = http.responseBody();
+            break;
+        }
+
+        if (httpCode >= 400 && httpCode < 500) break;  // Don't retry client errors
+    }
+
+#else
+    // ESP32 uses native HTTPClient
+    HTTPClient http;
+    char url[512];
+    snprintf(url, sizeof(url), "https://api.golemio.cz%s", path);
 
     http.begin(url);
     http.addHeader("x-access-token", config.pragueApiKey);
     http.addHeader("Content-Type", "application/json");
     http.setTimeout(HTTP_TIMEOUT_MS);
-
-    const int MAX_RETRIES = 3;
-    int httpCode = -1;
 
     for (int retry = 0; retry < MAX_RETRIES; retry++)
     {
@@ -155,7 +229,10 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
 
         // Success - break out of retry loop
         if (httpCode == HTTP_CODE_OK)
+        {
+            payload = http.getString();
             break;
+        }
 
         // Don't retry on 4xx errors (client errors - won't fix with retry)
         if (httpCode >= 400 && httpCode < 500)
@@ -192,10 +269,14 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
             }
         }
     }
+#endif
 
+#if defined(MATRIX_PORTAL_M4)
+    if (httpCode == 200)
+#else
     if (httpCode == HTTP_CODE_OK)
+#endif
     {
-        String payload = http.getString();
         DynamicJsonDocument doc(JSON_BUFFER_SIZE);
         DeserializationError error = deserializeJson(doc, payload);
 
@@ -205,7 +286,9 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
             snprintf(jsonErrMsg, sizeof(jsonErrMsg), "JSON Parse Error for stop %s: %s", stopId, error.c_str());
             logTimestamp();
             debugPrintln(jsonErrMsg);
+#if !defined(MATRIX_PORTAL_M4)
             http.end();
+#endif
             return false;
         }
 
@@ -231,11 +314,13 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
                 if (tempCount >= MAX_TEMP_DEPARTURES)
                     break;
 
-                parseDepartureObject(dep, tempDepartures, tempCount);
+                parseDepartureObject(dep, tempDepartures, tempCount, stopIndex);
             }
         }
 
+#if !defined(MATRIX_PORTAL_M4)
         http.end();
+#endif
         return true;
     }
     else
@@ -245,13 +330,18 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
                  MAX_RETRIES, stopId, httpCode);
         logTimestamp();
         debugPrintln(failMsg);
+#if !defined(MATRIX_PORTAL_M4)
         http.end();
+#endif
         return false;
     }
 }
 
-void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount)
+void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartures, int &tempCount, int stopIndex)
 {
+    // Set stop index
+    tempDepartures[tempCount].stopIndex = stopIndex;
+
     // Route/Line info
     const char *line = depJson["route"]["short_name"];
     if (line)
@@ -286,7 +376,7 @@ void GolemioAPI::parseDepartureObject(JsonObject depJson, Departure *tempDepartu
     if (timestamp)
     {
         struct tm tm;
-        strptime(timestamp, "%Y-%m-%dT%H:%M:%S", &tm);
+        parseISO8601(timestamp, &tm);
         time_t depTime = mktime(&tm);
 
         // Store timestamp for future recalculation

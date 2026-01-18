@@ -1,7 +1,16 @@
 #ifndef OTAUPDATEMANAGER_H
 #define OTAUPDATEMANAGER_H
 
-#include <WebServer.h>
+#include <stddef.h>
+
+// Platform-specific web server includes
+#if defined(MATRIX_PORTAL_M4)
+    // M4: OTA not supported, stub uses void* for server type
+    typedef void* WebServerType;
+#else
+    #include <WebServer.h>
+    typedef WebServer WebServerType;
+#endif
 
 // ============================================================================
 // OTA Update Manager
@@ -10,6 +19,7 @@
 /**
  * Handles Over-The-Air (OTA) firmware updates via web interface.
  * Manages chunked upload, validation, and installation of new firmware.
+ * Note: OTA is not supported on M4 due to limited flash.
  */
 class OTAUpdateManager
 {
@@ -31,7 +41,7 @@ public:
      * @param server WebServer instance handling the upload
      * @param onProgress Optional callback for progress updates (can be nullptr)
      */
-    void handleUpload(WebServer* server, ProgressCallback onProgress);
+    void handleUpload(WebServerType* server, ProgressCallback onProgress);
 
     /**
      * Check if update is currently in progress

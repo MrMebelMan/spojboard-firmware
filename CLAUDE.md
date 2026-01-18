@@ -6,15 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **SpojBoard** - Smart Panel for Onward Journeys
 
-ESP32-based transit departure display that fetches real-time data from multiple transit APIs. Modular Arduino/PlatformIO project for Adafruit MatrixPortal ESP32-S3 with HUB75 LED matrix panels (128x32 display).
+Transit departure display that fetches real-time data from multiple transit APIs. Modular Arduino/PlatformIO project supporting both **Adafruit MatrixPortal ESP32-S3** and **Adafruit Matrix Portal M4** with HUB75 LED matrix panels (128x32 display).
 
 **SPOJ** = **S**mart **P**anel for **O**nward **J**ourneys (also "spoj" = connection/service in Czech)
 
 **Key Features:**
-- Multi-city support: Prague (Golemio API) and Berlin (BVG API)
+- Multi-platform support: ESP32-S3 (full features) and Matrix Portal M4 (Prague/Golemio only)
+- Multi-city support: Prague (Golemio API) and Berlin (BVG API) - ESP32-S3 only
 - Standalone operation with direct API access
-- WiFi captive portal for configuration
-- Persistent settings in ESP32 NVS flash with backward compatibility migration
+- WiFi captive portal for configuration (ESP32-S3 only)
+- Persistent settings in flash (NVS on ESP32, FlashStorage on M4)
 - Custom 8-bit ISO-8859-2 GFXfonts with full character support (Czech, German, etc.)
 - UTF-8 to ISO-8859-2 automatic conversion for API data
 - Configurable minimum departure time filter
@@ -25,21 +26,20 @@ ESP32-based transit departure display that fetches real-time data from multiple 
 
 ## Build & Development Commands
 
-**IMPORTANT:** PlatformIO must be run from the Python virtual environment. Activate it first:
-```bash
-source ~/code/esp32/venv/bin/activate
-```
-
 ### Building and Uploading
+
 ```bash
-# Build the project
-pio run
+# Build for ESP32-S3 (default, full features)
+pio run -e adafruit_matrixportal_esp32s3
 
-# Upload to device
-pio run -t upload
+# Build for Matrix Portal M4 (Prague/Golemio only)
+pio run -e adafruit_matrix_portal_m4
 
-# Build and upload in one command
-pio run -t upload
+# Upload to ESP32-S3
+pio run -e adafruit_matrixportal_esp32s3 -t upload
+
+# Upload to Matrix Portal M4
+pio run -e adafruit_matrix_portal_m4 -t upload
 
 # Clean build files
 pio run -t clean
@@ -47,8 +47,11 @@ pio run -t clean
 # Monitor serial output (115200 baud)
 pio device monitor
 
-# Upload and monitor
-pio run -t upload && pio device monitor
+# Upload and monitor (ESP32-S3)
+pio run -e adafruit_matrixportal_esp32s3 -t upload && pio device monitor
+
+# Upload and monitor (M4)
+pio run -e adafruit_matrix_portal_m4 -t upload && pio device monitor
 ```
 
 ### Debugging
@@ -266,12 +269,32 @@ Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to pres
 
 ## Hardware Constraints
 
+### ESP32-S3 (Full Features)
 - **Target board**: `adafruit_matrixportal_esp32s3` (PlatformIO board definition)
-- **WiFi**: 2.4GHz only (ESP32-S3 limitation)
+- **WiFi**: 2.4GHz only, native WiFi support
 - **Display**: 2× HUB75 64×32 panels chained (128×32 total resolution)
+- **Display library**: ESP32-HUB75-MatrixPanel-I2S-DMA
 - **Memory**: Default partition scheme, ~200KB typical free heap
 - **Clock speed**: 10MHz I2S for HUB75 communication
 - **USB CDC**: Enabled on boot for serial debugging
+- **Features**: Full web UI, captive portal, OTA updates, multi-city support
+
+### Matrix Portal M4 (Prague/Golemio Only)
+- **Target board**: `adafruit_matrix_portal_m4` (PlatformIO board definition)
+- **MCU**: SAMD51 (Cortex-M4) + ESP32 WiFi coprocessor via SPI
+- **WiFi**: 2.4GHz only via WiFiNINA library
+- **Display**: 2× HUB75 64×32 panels chained (128×32 total resolution)
+- **Display library**: Adafruit Protomatter (4-bit depth, 4 address pins for 32-row 1:16 scan)
+- **Memory**: 192KB RAM, 496KB Flash (~8% RAM, ~21% Flash used)
+- **Storage**: FlashStorage_SAMD for persistent config
+- **Limitations**:
+  - No web configuration UI (credentials hardcoded in AppConfig.h)
+  - No captive portal (DNSServer not available)
+  - No Berlin/BVG API support (excluded from build)
+  - No GitHub OTA updates (manual upload only)
+  - No runtime brightness control (set via bit depth at init)
+  - No telnet logging
+- **Configuration**: Edit `DEFAULT_WIFI_SSID`, `DEFAULT_WIFI_PASSWORD`, `DEFAULT_GOLEMIO_API_KEY` in AppConfig.h
 
 ## Web Interface Routes
 

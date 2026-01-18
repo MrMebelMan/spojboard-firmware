@@ -18,6 +18,7 @@ struct Departure
     bool hasAC;           // Air conditioning
     bool isDelayed;       // Has delay
     int delayMinutes;     // Delay in minutes
+    int stopIndex;        // Which stop this departure is from (0, 1, 2, ...)
 };
 
 // ============================================================================

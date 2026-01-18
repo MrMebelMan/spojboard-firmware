@@ -1,7 +1,10 @@
 #include "OTAUpdateManager.h"
 #include "../utils/Logger.h"
-#include <Update.h>
 #include <Arduino.h>
+
+#if !defined(MATRIX_PORTAL_M4)
+    #include <Update.h>
+#endif
 
 OTAUpdateManager::OTAUpdateManager()
     : updating(false), totalSize(0), uploadedSize(0), progressCallback(nullptr)
@@ -16,12 +19,21 @@ OTAUpdateManager::~OTAUpdateManager()
 bool OTAUpdateManager::begin()
 {
     logTimestamp();
+#if defined(MATRIX_PORTAL_M4)
+    Serial.println("OTA Update Manager: Not supported on Matrix Portal M4");
+#else
     Serial.println("OTA Update Manager initialized");
+#endif
     return true;
 }
 
-void OTAUpdateManager::handleUpload(WebServer* server, ProgressCallback onProgress)
+void OTAUpdateManager::handleUpload(WebServerType* server, ProgressCallback onProgress)
 {
+#if defined(MATRIX_PORTAL_M4)
+    // OTA not supported on M4 due to limited flash and no Update library
+    setError("OTA updates not supported on Matrix Portal M4");
+    return;
+#else
     if (server == nullptr)
     {
         return;
@@ -130,6 +142,7 @@ void OTAUpdateManager::handleUpload(WebServer* server, ProgressCallback onProgre
         logTimestamp();
         Serial.println("OTA Update aborted");
     }
+#endif // !MATRIX_PORTAL_M4
 }
 
 void OTAUpdateManager::setError(const char* msg)

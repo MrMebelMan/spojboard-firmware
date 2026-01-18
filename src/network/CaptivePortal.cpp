@@ -1,4 +1,8 @@
 #include "CaptivePortal.h"
+
+// CaptivePortal is stubbed in header for M4, only compile implementation for ESP32
+#if !defined(MATRIX_PORTAL_M4)
+
 #include "../utils/Logger.h"
 
 CaptivePortal::CaptivePortal()
@@ -102,3 +106,5 @@ void CaptivePortal::setupDetectionHandlers(WebServer* server)
     logTimestamp();
     Serial.println("Captive portal detection handlers registered");
 }
+
+#endif // !MATRIX_PORTAL_M4

@@ -1,4 +1,8 @@
 #include "TelnetLogger.h"
+
+// TelnetLogger is stubbed in header for M4, only compile implementation for ESP32
+#if !defined(MATRIX_PORTAL_M4)
+
 #include "Logger.h"
 #include <Arduino.h>
 
@@ -91,3 +95,5 @@ void TelnetLogger::end()
         Serial.println("Telnet server stopped");
     }
 }
+
+#endif // !MATRIX_PORTAL_M4

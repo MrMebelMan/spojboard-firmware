@@ -2,7 +2,7 @@
 #define DISPLAYCOLORS_H
 
 #include <stdint.h>
-#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+#include <Adafruit_GFX.h>
 
 // ============================================================================
 // Color Definitions (RGB565 format)
@@ -23,11 +23,10 @@ extern uint16_t COLOR_CYAN;
 // ============================================================================
 
 /**
- * Initialize color constants from display panel
+ * Initialize color constants
  * Must be called after display is initialized
- * @param display Pointer to initialized HUB75 display
  */
-void initColors(MatrixPanel_I2S_DMA* display);
+void initColors();
 
 /**
  * Get color for transit line number

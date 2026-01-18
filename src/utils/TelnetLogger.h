@@ -1,11 +1,38 @@
 #ifndef TELNETLOGGER_H
 #define TELNETLOGGER_H
 
-#include <ESPTelnet.h>
+#include <stdint.h>
 
 // ============================================================================
 // Telnet Logger - Remote serial monitoring over WiFi
 // ============================================================================
+
+#if defined(MATRIX_PORTAL_M4)
+// Stub implementation for M4 - telnet not supported
+class TelnetLogger
+{
+public:
+    static TelnetLogger& getInstance()
+    {
+        static TelnetLogger instance;
+        return instance;
+    }
+
+    bool begin(uint16_t port = 23) { (void)port; return false; }
+    void loop() {}
+    void print(const char* message) { (void)message; }
+    void println(const char* message) { (void)message; }
+    bool isActive() { return false; }
+    bool hasClients() { return false; }
+    void end() {}
+
+private:
+    TelnetLogger() {}
+};
+
+#else
+// Full ESP32 implementation
+#include <ESPTelnet.h>
 
 /**
  * Singleton telnet logger for remote debugging
@@ -66,5 +93,7 @@ private:
     ESPTelnet telnet;
     bool active;
 };
+
+#endif // MATRIX_PORTAL_M4
 
 #endif // TELNETLOGGER_H

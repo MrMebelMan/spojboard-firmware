@@ -48,4 +48,11 @@ bool getFormattedTime(char* buffer, size_t size, const char* format = "%Y-%m-%d 
  */
 bool getCurrentTime(struct tm* timeinfo);
 
+/**
+ * Get current epoch time (seconds since 1970)
+ * Uses NTPClient on M4, system time on ESP32
+ * @return Current epoch time, or 0 if time not synced
+ */
+time_t getCurrentEpochTime();
+
 #endif // TIMEUTILS_H
