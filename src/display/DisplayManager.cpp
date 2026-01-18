@@ -280,6 +280,18 @@ void DisplayManager::drawDateTime()
     display->print(timeStr);
 }
 
+void DisplayManager::drawErrorBar(const char *errorMsg)
+{
+    int y = 24; // Bottom row
+    display->fillRect(0, y, 128, 8, COLOR_BLACK); // Clear bottom row
+
+    display->setFont(fontSmall);
+    display->setTextColor(COLOR_RED);
+    display->setCursor(2, y + 7);
+    display->print("ERR: ");
+    display->print(errorMsg);
+}
+
 void DisplayManager::drawStatus(const char *line1, const char *line2, uint16_t color)
 {
     display->fillScreen(0);
@@ -463,15 +475,7 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
         return;
     }
 
-    if (apiError)
-    {
-        drawStatus("API Error", apiErrorMsg, COLOR_RED);
-        drawDateTime();
-        isDrawing = false;
-        return;
-    }
-
-    if (departureCount == 0)
+    if (departureCount == 0 && !apiError)
     {
         drawStatus("No Departures", stopName[0] ? stopName : "Waiting...", COLOR_YELLOW);
         drawDateTime();
@@ -490,7 +494,15 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
         delay(1);
     }
 
-    drawDateTime();
+    // Show error in status bar if API error, otherwise show date/time
+    if (apiError)
+    {
+        drawErrorBar(apiErrorMsg);
+    }
+    else
+    {
+        drawDateTime();
+    }
     delay(1);
 
 #if defined(MATRIX_PORTAL_M4)

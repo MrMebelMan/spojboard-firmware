@@ -118,6 +118,7 @@ private:
     // Drawing functions
     void drawDeparture(int row, const Departure& dep);
     void drawDateTime();
+    void drawErrorBar(const char* errorMsg);
     void drawAPMode(const char* ssid, const char* password);
 };
 

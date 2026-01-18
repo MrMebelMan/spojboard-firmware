@@ -40,7 +40,7 @@ void loadConfig(Config& config)
         strlcpy(config.pragueApiKey, DEFAULT_GOLEMIO_API_KEY, sizeof(config.pragueApiKey));
         strlcpy(config.pragueStopIds, DEFAULT_PRAGUE_STOP_IDS, sizeof(config.pragueStopIds));
         strlcpy(config.city, "Prague", sizeof(config.city));
-        config.refreshInterval = 90;
+        config.refreshInterval = 300;
         config.numDepartures = 3;
         config.minDepartureTime = 3;
         config.brightness = 45;
@@ -146,7 +146,7 @@ void loadConfig(Config& config)
         }
     }
 
-    config.refreshInterval = preferences.getInt("refresh", 90);
+    config.refreshInterval = preferences.getInt("refresh", 300);
     config.numDepartures = preferences.getInt("numDeps", 3);     // Display rows (1-3)
     config.minDepartureTime = preferences.getInt("minDepTime", 3);
     config.brightness = preferences.getInt("brightness", 90);
