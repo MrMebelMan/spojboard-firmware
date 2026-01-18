@@ -4,6 +4,7 @@
 #include "utils/Logger.h"
 #include "utils/TimeUtils.h"
 #include "utils/gfxlatin2.h"
+#include "utils/RestMode.h"
 #include "utils/TelnetLogger.h"
 #include "config/AppConfig.h"
 #include "api/DepartureData.h"
@@ -54,6 +55,8 @@ bool apiError = false;
 char apiErrorMsg[64] = "";
 char stopName[64] = "";
 bool demoModeActive = false; // Demo mode flag - stops API polling and display updates
+bool restModeActive = false; // Rest mode flag - pauses API polling and turns off display
+int lastRestCheckMinute = -1; // Last minute when rest check triggered (0-59)
 WeatherData weatherData = {}; // Global weather state
 
 // Network layer is now in network/ modules:
@@ -305,12 +308,29 @@ void onDemoStart(const Departure* demoDepartures, int demoCount)
 
 void onDemoStop()
 {
-    // Exit demo mode: resume normal operation
+    // Exit demo mode: check if we should return to rest mode
     demoModeActive = false;
-    lastApiCall = 0; // Force immediate API refresh
 
-    logTimestamp();
-    debugPrintln("Demo mode deactivated - resuming normal operation");
+    // Check if we're in a rest period
+    if (isInRestPeriod(config.restModePeriods))
+    {
+        // Return to rest mode
+        restModeActive = true;
+        displayManager.getDisplay()->clearScreen();
+        displayManager.getDisplay()->flipDMABuffer();
+
+        logTimestamp();
+        debugPrintln("Demo stopped - returning to rest mode (display off)");
+    }
+    else
+    {
+        // Resume normal operation
+        lastApiCall = 0;       // Force immediate API refresh
+        lastWeatherCall = 0;   // Force weather refresh
+
+        logTimestamp();
+        debugPrintln("Demo mode deactivated - resuming normal operation");
+    }
 }
 
 // ============================================================================
@@ -548,8 +568,45 @@ void loop()
     }
     wasConnected = isConnected;
 
-    // Skip API polling and ETA recalculation in demo mode
-    if (!demoModeActive)
+    // Check rest mode at :00 and :30 minutes (twice per hour, synchronized to clock)
+    if (!wifiManager.isAPMode())
+    {
+        struct tm timeinfo;
+        if (getCurrentTime(&timeinfo))
+        {
+            int currentMinute = timeinfo.tm_min;
+
+            // Trigger check at :00 and :30 minutes (avoid duplicate checks in same minute)
+            if ((currentMinute == 0 || currentMinute == 30) && currentMinute != lastRestCheckMinute)
+            {
+                lastRestCheckMinute = currentMinute;
+                bool shouldBeInRest = isInRestPeriod(config.restModePeriods);
+
+                if (shouldBeInRest && !restModeActive)
+                {
+                    // Enter rest mode
+                    restModeActive = true;
+                    displayManager.getDisplay()->clearScreen();
+                    displayManager.getDisplay()->flipDMABuffer();
+                    logTimestamp();
+                    debugPrintln("RestMode: Activated - display off, API polling paused");
+                }
+                else if (!shouldBeInRest && restModeActive)
+                {
+                    // Exit rest mode
+                    restModeActive = false;
+                    lastApiCall = 0;
+                    lastWeatherCall = 0;
+                    needsDisplayUpdate = true;
+                    logTimestamp();
+                    debugPrintln("RestMode: Deactivated - resuming normal operation");
+                }
+            }
+        }
+    }
+
+    // Skip API polling and ETA recalculation in demo mode or rest mode
+    if (!demoModeActive && !restModeActive)
     {
         // Periodic API calls (only when connected and not in AP mode)
         if (wifiManager.isConnected() && isCityConfigured())
@@ -590,8 +647,8 @@ void loop()
         }
     }
 
-    // Update display
-    if (needsDisplayUpdate)
+    // Update display (skip if in rest mode)
+    if (needsDisplayUpdate && !restModeActive)
     {
         needsDisplayUpdate = false;
         displayManager.updateDisplay(departures,

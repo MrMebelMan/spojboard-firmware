@@ -657,6 +657,19 @@ void DisplayManager::resetScroll()
     lastScrollTick = millis();
 }
 
+void DisplayManager::clearScreen()
+{
+    if (display == nullptr || isDrawing)
+    {
+        return;
+    }
+
+    isDrawing = true;
+    display->clearScreen();
+    display->flipDMABuffer();
+    isDrawing = false;
+}
+
 bool DisplayManager::updateScroll()
 {
     // Don't update if we're in the middle of a full redraw

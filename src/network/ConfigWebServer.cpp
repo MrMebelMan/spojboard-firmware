@@ -481,6 +481,23 @@ void ConfigWebServer::handleSave()
         Serial.println(strlen(newConfig.lineColorMap) > 0 ? newConfig.lineColorMap : "(empty - using defaults)");
     }
 
+    // Parse rest mode periods
+    if (server->hasArg("restperiods"))
+    {
+        String restPeriods = server->arg("restperiods");
+
+        if (restPeriods.length() < sizeof(newConfig.restModePeriods))
+        {
+            strlcpy(newConfig.restModePeriods, restPeriods.c_str(), sizeof(newConfig.restModePeriods));
+        }
+        else
+        {
+            logTimestamp();
+            debugPrintln("RestMode: Config string too long, truncating");
+            strlcpy(newConfig.restModePeriods, restPeriods.c_str(), sizeof(newConfig.restModePeriods));
+        }
+    }
+
     newConfig.configured = true;
 
     // If in AP mode, WiFi changed, or city changed, show restart message

@@ -127,6 +127,11 @@ public:
      */
     void resetScroll();
 
+    /**
+     * Clear display screen and flip buffer (for rest mode)
+     */
+    void clearScreen();
+
 private:
     MatrixPanel_I2S_DMA* display;
     bool isDrawing;

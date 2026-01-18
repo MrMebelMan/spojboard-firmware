@@ -289,6 +289,123 @@ String buildDashboardPage(
         html += "</div>";
     }
 
+    // Rest Mode section (only show when not in AP mode)
+    if (!apModeActive)
+    {
+        html += "<div class='card'>";
+        html += "<h2>Rest Mode</h2>";
+        html += "<p class='info'>Configure time periods when display turns off and API polling stops. ";
+        html += "Web server remains accessible. Demo mode can be invoked during rest mode.</p>";
+        html += "<p class='info' style='font-size:0.9em; color:#888;'>";
+        html += "<strong>Half-hour increments:</strong> Times limited to :00 and :30 (e.g., 22:00, 22:30)<br>";
+        html += "<strong>Overnight example:</strong> 22:00-06:00 (display off from 10 PM to 6 AM)<br>";
+        html += "<strong>Lunch break:</strong> 12:00-13:00 (display off from noon to 1 PM)</p>";
+
+        html += "<table id='restModeTable' style='width:100%; margin-bottom:10px; border-collapse:collapse;'>";
+        html += "<thead><tr style='border-bottom:2px solid #444;'>";
+        html += "<th style='text-align:left; padding:8px;'>From Time</th>";
+        html += "<th style='text-align:left; padding:8px;'>To Time</th>";
+        html += "<th style='text-align:center; padding:8px; width:60px;'>Action</th>";
+        html += "</tr></thead>";
+        html += "<tbody id='restModeRows'>";
+
+        // Parse existing config
+        if (config && strlen(config->restModePeriods) > 0)
+        {
+            char periodsCopy[256];
+            strlcpy(periodsCopy, config->restModePeriods, sizeof(periodsCopy));
+
+            char *token = strtok(periodsCopy, ",");
+            while (token != nullptr)
+            {
+                while (*token == ' ')
+                    token++;
+
+                char *dashPos = strchr(token, '-');
+                if (dashPos)
+                {
+                    *dashPos = '\0';
+                    const char *fromTime = token;
+                    const char *toTime = dashPos + 1;
+
+                    // Parse HH:MM format
+                    char fromHour[3] = {0}, fromMin[3] = {0};
+                    char toHour[3] = {0}, toMin[3] = {0};
+                    if (strlen(fromTime) >= 5)
+                    {
+                        strncpy(fromHour, fromTime, 2);
+                        strncpy(fromMin, fromTime + 3, 2);
+                    }
+                    if (strlen(toTime) >= 5)
+                    {
+                        strncpy(toHour, toTime, 2);
+                        strncpy(toMin, toTime + 3, 2);
+                    }
+
+                    html += "<tr>";
+
+                    // From Time dropdowns
+                    html += "<td style='padding:8px;'>";
+                    html += "<select class='restFromHour' style='padding:5px; margin-right:5px;'>";
+                    for (int h = 0; h < 24; h++)
+                    {
+                        char hour[3];
+                        snprintf(hour, sizeof(hour), "%02d", h);
+                        html += "<option value='" + String(hour) + "'";
+                        if (strcmp(hour, fromHour) == 0)
+                            html += " selected";
+                        html += ">" + String(hour) + "</option>";
+                    }
+                    html += "</select>:<select class='restFromMin' style='padding:5px;'>";
+                    html += "<option value='00'";
+                    if (strcmp(fromMin, "00") == 0)
+                        html += " selected";
+                    html += ">00</option>";
+                    html += "<option value='30'";
+                    if (strcmp(fromMin, "30") == 0)
+                        html += " selected";
+                    html += ">30</option>";
+                    html += "</select></td>";
+
+                    // To Time dropdowns
+                    html += "<td style='padding:8px;'>";
+                    html += "<select class='restToHour' style='padding:5px; margin-right:5px;'>";
+                    for (int h = 0; h < 24; h++)
+                    {
+                        char hour[3];
+                        snprintf(hour, sizeof(hour), "%02d", h);
+                        html += "<option value='" + String(hour) + "'";
+                        if (strcmp(hour, toHour) == 0)
+                            html += " selected";
+                        html += ">" + String(hour) + "</option>";
+                    }
+                    html += "</select>:<select class='restToMin' style='padding:5px;'>";
+                    html += "<option value='00'";
+                    if (strcmp(toMin, "00") == 0)
+                        html += " selected";
+                    html += ">00</option>";
+                    html += "<option value='30'";
+                    if (strcmp(toMin, "30") == 0)
+                        html += " selected";
+                    html += ">30</option>";
+                    html += "</select></td>";
+
+                    // Delete button
+                    html += "<td style='padding:8px; text-align:center;'>";
+                    html += "<button type='button' onclick='deleteRestRow(this)' style='background:#ff6b6b; color:#fff; padding:5px 10px; border:none; cursor:pointer;'>X</button>";
+                    html += "</td>";
+                    html += "</tr>";
+                }
+                token = strtok(nullptr, ",");
+            }
+        }
+
+        html += "</tbody></table>";
+        html += "<button type='button' onclick='addRestRow()' style='background:#00d4ff; color:#fff; padding:8px 15px; border:none; cursor:pointer; margin-bottom:10px;'>+ Add Rest Period</button>";
+        html += "<input type='hidden' name='restperiods' id='restPeriodsData' value=''>";
+        html += "</div>";
+    }
+
     // Line Colors section (only show when not in AP mode)
     if (!apModeActive)
     {
@@ -435,6 +552,7 @@ String buildDashboardPage(
     if (!apModeActive)
     {
         html += FPSTR(SCRIPT_LINE_COLORS);
+        html += FPSTR(SCRIPT_REST_MODE);
     }
 
     html += FPSTR(HTML_FOOTER);

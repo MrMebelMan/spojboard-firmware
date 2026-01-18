@@ -312,6 +312,89 @@ document.querySelector('form').addEventListener('submit', function(e) {
 </script>
 )rawliteral";
 
+// Rest mode configuration JavaScript
+const char SCRIPT_REST_MODE[] PROGMEM = R"rawliteral(
+<script>
+// Add new empty row to rest mode table
+function addRestRow() {
+    const tbody = document.getElementById('restModeRows');
+    const row = tbody.insertRow();
+
+    // From Time: Hour + Minute dropdowns
+    const cell1 = row.insertCell(0);
+    cell1.style.padding = '8px';
+    let fromHtml = '<select class="restFromHour" style="padding:5px; margin-right:5px;">';
+    for (let h = 0; h < 24; h++) {
+        const hour = String(h).padStart(2, '0');
+        fromHtml += `<option value="${hour}">${hour}</option>`;
+    }
+    fromHtml += '</select>:<select class="restFromMin" style="padding:5px;">';
+    fromHtml += '<option value="00">00</option><option value="30">30</option>';
+    fromHtml += '</select>';
+    cell1.innerHTML = fromHtml;
+
+    // To Time: Hour + Minute dropdowns
+    const cell2 = row.insertCell(1);
+    cell2.style.padding = '8px';
+    let toHtml = '<select class="restToHour" style="padding:5px; margin-right:5px;">';
+    for (let h = 0; h < 24; h++) {
+        const hour = String(h).padStart(2, '0');
+        toHtml += `<option value="${hour}">${hour}</option>`;
+    }
+    toHtml += '</select>:<select class="restToMin" style="padding:5px;">';
+    toHtml += '<option value="00">00</option><option value="30">30</option>';
+    toHtml += '</select>';
+    cell2.innerHTML = toHtml;
+
+    // Delete button
+    const cell3 = row.insertCell(2);
+    cell3.style.padding = '8px';
+    cell3.style.textAlign = 'center';
+    cell3.innerHTML = "<button type='button' onclick='deleteRestRow(this)' style='background:#ff6b6b; color:#fff; padding:5px 10px; border:none; cursor:pointer;'>X</button>";
+}
+
+// Delete row from table
+function deleteRestRow(btn) {
+    btn.closest('tr').remove();
+}
+
+// Serialize table to hidden input before form submit
+function serializeRestPeriods() {
+    const rows = document.querySelectorAll('#restModeRows tr');
+    const periods = [];
+
+    rows.forEach(row => {
+        const fromHour = row.querySelector('.restFromHour').value;
+        const fromMin = row.querySelector('.restFromMin').value;
+        const toHour = row.querySelector('.restToHour').value;
+        const toMin = row.querySelector('.restToMin').value;
+
+        const fromTime = `${fromHour}:${fromMin}`;
+        const toTime = `${toHour}:${toMin}`;
+
+        periods.push(`${fromTime}-${toTime}`);
+    });
+
+    document.getElementById('restPeriodsData').value = periods.join(',');
+    return true;
+}
+
+// Attach serializer to form submit (must happen after DOM ready)
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form');
+    const existingHandler = form.onsubmit;
+
+    form.addEventListener('submit', function(e) {
+        // Call existing handlers (e.g., serializeLineColors)
+        if (existingHandler) {
+            existingHandler(e);
+        }
+        serializeRestPeriods();
+    });
+});
+</script>
+)rawliteral";
+
 // Demo page JavaScript
 const char SCRIPT_DEMO[] PROGMEM = R"rawliteral(
 <script>
