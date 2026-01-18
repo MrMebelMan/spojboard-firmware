@@ -32,8 +32,11 @@ bool WiFiManager::connectSTA(const Config& config, int maxAttempts, int delayMs)
     // Start connection
     WiFi.begin(config.wifiSsid, config.wifiPassword);
 #else
-    // ESP32 - set station mode first
+    // ESP32 - disconnect and reset WiFi first
+    WiFi.disconnect(true);
+    delay(500);
     WiFi.mode(WIFI_STA);
+    delay(2000);
     WiFi.begin(config.wifiSsid, config.wifiPassword);
 #endif
 
