@@ -66,6 +66,32 @@ pio project config
 pio device list
 ```
 
+### Network & Boot Diagnostics
+
+**Boot Timing Logs:**
+The firmware logs detailed timing information during startup with `[BOOT:]` prefix:
+```
+[BOOT:0] Starting SpojBoard...
+[BOOT:512] Config loaded
+[BOOT:1024] Display initialized
+[BOOT:1536] WiFi reset complete
+[BOOT:3548] WiFi connected
+[BOOT:4060] Time sync complete
+```
+
+**Network Diagnostic Functions (Logger.h):**
+```cpp
+// Convert HTTP error code to human-readable string
+const char* httpErrorToString(int httpCode);
+// Examples: -1 = "CONNECTION_REFUSED", -11 = "READ_TIMEOUT"
+
+// Log network state for debugging connectivity issues
+void logNetworkDiagnostics();
+// Outputs: WiFi status, RSSI, IP address, gateway, DNS
+```
+
+These diagnostics are automatically logged during API retry attempts to help debug network issues.
+
 ## Architecture
 
 ### Modular Structure
@@ -92,7 +118,7 @@ src/
 │   ├── OTAUpdateManager.h/cpp       # OTA firmware upload handling
 │   ├── GitHubOTA.h/cpp              # GitHub releases integration
 └── utils/
-    ├── Logger.h/cpp                 # Logging utilities
+    ├── Logger.h/cpp                 # Logging utilities & network diagnostics
     ├── TimeUtils.h/cpp              # NTP sync & time formatting
     ├── gfxlatin2.h/cpp              # UTF-8 to ISO-8859-2 conversion
     └── decodeutf8.h/cpp             # UTF-8 decoder
@@ -114,9 +140,9 @@ The device operates in two modes with an optional demo state:
 - **Demo Mode** (`demoModeActive=true`): Pauses API polling and automatic display updates, shows custom sample departures
 
 Transitions:
-- Boot → WiFi reset (disconnect + 2s delay) → Try STA mode (20 attempts)
+- Boot → WiFi reset (disconnect + 2s delay) → Try STA mode (5 attempts × 500ms = 2.5s max)
   - If `noApFallback=false`: Fail → AP mode
-  - If `noApFallback=true`: Fail → Retry indefinitely every 5s (never enters AP mode)
+  - If `noApFallback=true`: Fail → Retry indefinitely every 2s (never enters AP mode)
 - AP mode + config save → Restart → Try STA mode
 - STA mode connection loss → Auto-reconnect attempts every 30s
 - Demo start → Set demoModeActive=true, stop API polling
@@ -136,7 +162,7 @@ WiFi.begin(ssid, password);
 
 - **Row-based layout**: 4 rows × 8 pixels each on 128×32 matrix
   - Rows 0-2: Departure entries (line number, L/R indicator, destination, ETA) - shared by normal and demo modes
-  - Row 3: Date/time status bar with pipe separator (e.g., "Mon| Feb 15 14:35"), or error message in red if API error
+  - Row 3: Date/time status bar (e.g., "Mon Feb 15 14:35"), or error message in red if API error
 - **Multi-stop direction indicators**: Colored L/R letters before destination show which stop the departure is from
   - L (green) = stop index 0 (first configured stop)
   - R (blue) = stop index 1 (second configured stop)
@@ -198,7 +224,19 @@ HUB75 matrix pins are hardcoded for Adafruit MatrixPortal ESP32-S3 (lines 25-40)
 - Abstract base class: `TransitAPI` defines common interface for all transit APIs
 - `APIResult` struct: departures array, count, stop name, error status
 - `APIStatusCallback`: callback function type for status updates
+- `APIPartialResultsCallback`: callback for incremental display updates (called after each stop is queried)
 - Runtime API selection: main.cpp selects GolemioAPI or BvgAPI based on `config.city`
+
+**Incremental Display Updates:**
+When multiple stops are configured, departures appear on screen as soon as the first stop returns data, rather than waiting for all stops to be queried. This provides faster visual feedback, especially on slower platforms like M4 where SSL handshakes add significant latency.
+
+```cpp
+// Callback signature
+typedef void (*APIPartialResultsCallback)(const Departure* departures, int count, const char* stopName);
+
+// Set in main.cpp
+api->setPartialResultsCallback(onPartialResults);
+```
 
 ### Departure Caching and Display Logic
 
@@ -255,7 +293,29 @@ HUB75 matrix pins are hardcoded for Adafruit MatrixPortal ESP32-S3 (lines 25-40)
 - Stop ID format: GTFS IDs from PID data (e.g., "U693Z2P")
 - Configuration fields: `config.pragueApiKey`, `config.pragueStopIds`
 - Rate limits: Configurable refresh interval (10-300s) to avoid HTTP 429
+- HTTP timeout: 60 seconds (required for M4's slow WiFiNINA + SSL handshake)
 - Find IDs at: https://data.pid.cz/stops/json/stops.json
+
+**M4 Response Body Optimization:**
+On Matrix Portal M4, the default `http.responseBody()` from ArduinoHttpClient reads one character at a time, causing ~10-20 second delays for ~5KB responses. The implementation uses chunked reading with pre-allocation for 4-10x faster body parsing:
+
+```cpp
+// Pre-allocate based on Content-Length
+int contentLen = http.contentLength();
+if (contentLen > 0 && contentLen < JSON_BUFFER_SIZE) {
+    payload.reserve(contentLen + 1);
+}
+
+// Read in 512-byte chunks (much faster than character-by-character)
+char buffer[512];
+while (http.available()) {
+    int bytesRead = http.read((uint8_t*)buffer, sizeof(buffer) - 1);
+    if (bytesRead > 0) {
+        buffer[bytesRead] = '\0';
+        payload += buffer;
+    }
+}
+```
 
 ### BVG API (Berlin)
 - Endpoint: `https://v6.bvg.transport.rest/stops/{stopId}/departures`
@@ -271,7 +331,40 @@ HUB75 matrix pins are hardcoded for Adafruit MatrixPortal ESP32-S3 (lines 25-40)
 - Multiple stops supported via comma separation (max 12 stops)
 - Each stop queried individually with separate API calls (1s delay between calls)
 - All departures collected, sorted by ETA, filtered by minimum departure time, then top N displayed
+- Partial results displayed as soon as first stop returns data (via `APIPartialResultsCallback`)
 - Applies to both Prague and Berlin APIs
+
+### HTTP Retry Logic & Error Handling
+
+**Retry Strategy:**
+- 3 retry attempts with exponential backoff (2s, 4s, 6s)
+- Socket properly closed before each retry to prevent socket leaks
+- 4xx client errors (e.g., 401, 403, 404) abort immediately without retry
+- Network diagnostics logged on each failure
+
+**Socket Leak Prevention (Critical):**
+```cpp
+// WRONG: http.begin() outside loop causes socket exhaustion
+http.begin(url);
+for (int retry = 0; retry < 3; retry++) {
+    httpCode = http.GET();  // Reuses stale connection
+    if (httpCode == 200) break;
+    // Socket never properly closed between retries!
+}
+
+// CORRECT: Fresh connection for each attempt
+for (int retry = 0; retry < 3; retry++) {
+    http.begin(url);  // New connection
+    httpCode = http.GET();
+    if (httpCode == 200) break;
+    http.end();  // Close socket BEFORE retry
+}
+```
+
+**Error Display:**
+- API errors shown in status bar ("ERR: [message]") while keeping departures visible
+- No full-screen "Retry X/3" messages during retry attempts
+- Previous departures remain on screen during API failures
 
 ### Departure Data Structure
 ```cpp
@@ -417,7 +510,7 @@ For public repositories, sensitive credentials are stored in a gitignored file:
 - NTP sync: `pool.ntp.org`
 - Timezone: CET/CEST (UTC+1/+2)
 - ETA calculation: Compares ISO timestamp from API with local time (mktime/difftime)
-- Display format: "Wed 08.Jan 14:35" on bottom row
+- Display format: "Mon Feb 15 14:35" on bottom row (day of week, month, day, time)
 
 ## Font System
 
