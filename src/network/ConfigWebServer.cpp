@@ -145,6 +145,10 @@ bool ConfigWebServer::begin()
                { handleStartDemo(); });
     server->on("/stop-demo", HTTP_POST, [this]()
                { handleStopDemo(); });
+    server->on("/on", HTTP_GET, [this]()
+               { handleScreenOn(); });
+    server->on("/off", HTTP_GET, [this]()
+               { handleScreenOff(); });
     server->onNotFound([this]()
                        { handleNotFound(); });
 
@@ -1585,6 +1589,24 @@ void ConfigWebServer::handleStopDemo()
 
     server->sendHeader("Location", "/");
     server->send(302, "text/plain", "");
+}
+
+void ConfigWebServer::handleScreenOn()
+{
+    if (displayManager != nullptr)
+    {
+        displayManager->turnOn();
+    }
+    server->send(200, "text/plain", "OK");
+}
+
+void ConfigWebServer::handleScreenOff()
+{
+    if (displayManager != nullptr)
+    {
+        displayManager->turnOff();
+    }
+    server->send(200, "text/plain", "OK");
 }
 
 #endif // !MATRIX_PORTAL_M4

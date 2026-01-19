@@ -4,9 +4,7 @@
 #include <Arduino.h>
 #include "../config/AppConfig.h"
 #include "../api/DepartureData.h"
-
-// Forward declaration
-class DisplayManager;
+#include "../display/DisplayManager.h"
 
 // ============================================================================
 // Configuration Web Server
@@ -14,8 +12,10 @@ class DisplayManager;
 
 #if defined(MATRIX_PORTAL_M4)
 // ==========================================================================
-// M4 Stub Implementation - No web server, config via serial/hardcoded
+// M4 Simple Implementation - Basic web server for /on and /off only
 // ==========================================================================
+
+#include <WiFiNINA.h>
 
 class ConfigWebServer
 {
@@ -26,22 +26,71 @@ public:
     typedef void (*DemoStartCallback)(const Departure* demoDepartures, int demoCount);
     typedef void (*DemoStopCallback)();
 
-    ConfigWebServer() {}
+    ConfigWebServer() : server(80), displayManager(nullptr), currentConfig(nullptr) {}
     ~ConfigWebServer() {}
 
-    bool begin() { Serial.println("Web server not available on M4"); return true; }
+    bool begin() {
+        server.begin();
+        Serial.println("Web server started on port 80 (M4 minimal)");
+        return true;
+    }
     void stop() {}
-    void handleClient() {}
+
+    void handleClient() {
+        WiFiClient client = server.available();
+        if (client) {
+            String request = "";
+            while (client.connected()) {
+                if (client.available()) {
+                    char c = client.read();
+                    request += c;
+                    if (c == '\n' && request.endsWith("\r\n\r\n")) {
+                        break;
+                    }
+                    if (request.length() > 200) break; // Limit request size
+                }
+            }
+
+            if (request.indexOf("GET /off") >= 0) {
+                if (displayManager) displayManager->turnOff();
+                client.println("HTTP/1.1 200 OK");
+                client.println("Content-Type: text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("OK");
+            }
+            else if (request.indexOf("GET /on") >= 0) {
+                if (displayManager) displayManager->turnOn();
+                client.println("HTTP/1.1 200 OK");
+                client.println("Content-Type: text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("OK");
+            }
+            else {
+                client.println("HTTP/1.1 404 Not Found");
+                client.println("Connection: close");
+                client.println();
+            }
+            delay(1);
+            client.stop();
+        }
+    }
 
     void setCallbacks(ConfigSaveCallback, RefreshCallback, RebootCallback,
                      DemoStartCallback = nullptr, DemoStopCallback = nullptr) {}
 
-    void setDisplayManager(DisplayManager*) {}
+    void setDisplayManager(DisplayManager* dm) { displayManager = dm; }
 
-    void updateState(const Config*, bool, bool, const char*, const char*, int,
-                    bool, const char*, int, const char*) {}
+    void updateState(const Config* cfg, bool, bool, const char*, const char*, int,
+                    bool, const char*, int, const char*) { currentConfig = cfg; }
 
     void* getServer() { return nullptr; }
+
+private:
+    WiFiServer server;
+    DisplayManager* displayManager;
+    const Config* currentConfig;
 };
 
 #else
@@ -128,6 +177,8 @@ private:
     void handleDemo();
     void handleStartDemo();
     void handleStopDemo();
+    void handleScreenOn();
+    void handleScreenOff();
     void handleNotFound();
 
     // OTA progress callbacks

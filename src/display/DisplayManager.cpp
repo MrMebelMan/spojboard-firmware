@@ -16,7 +16,7 @@
 #include "../fonts/DepartureMonoCondensed5pt8b.h"
 
 DisplayManager::DisplayManager()
-    : display(nullptr), isDrawing(false), config(nullptr)
+    : display(nullptr), isDrawing(false), screenOff(false), forceRedraw(false), config(nullptr)
 {
     fontSmall = &DepartureMono_Regular4pt8b;
     fontMedium = &DepartureMono_Regular5pt8b;
@@ -114,6 +114,32 @@ void DisplayManager::setBrightness(int brightness)
         display->setBrightness8(brightness);
 #endif
     }
+}
+
+void DisplayManager::turnOff()
+{
+    screenOff = true;
+    if (display)
+    {
+        display->fillScreen(0);
+#if defined(MATRIX_PORTAL_M4)
+        display->show();
+#else
+        display->setBrightness8(0);
+#endif
+    }
+}
+
+void DisplayManager::turnOn()
+{
+    screenOff = false;
+    forceRedraw = true;
+#if !defined(MATRIX_PORTAL_M4)
+    if (display && config)
+    {
+        display->setBrightness8(config->brightness);
+    }
+#endif
 }
 
 const char* DisplayManager::getLocalIPString()
@@ -261,7 +287,7 @@ void DisplayManager::drawDateTime()
 
     // Day of week
     char dayStr[6];
-    strftime(dayStr, 6, "%a|", &timeinfo);
+    strftime(dayStr, 6, "%a ", &timeinfo);
     utf8tocp(dayStr); // Convert Czech day names
     display->setCursor(2, y + 7);
     display->print(dayStr);
@@ -415,6 +441,10 @@ void DisplayManager::updateDisplay(const Departure *departures, int departureCou
                                    bool demoModeActive)
 {
     if (isDrawing)
+        return;
+
+    // Skip all drawing if screen is off
+    if (screenOff)
         return;
 
     isDrawing = true;

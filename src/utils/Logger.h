@@ -37,4 +37,17 @@ void debugPrint(const char* message);
  */
 void debugPrintln(const char* message);
 
+/**
+ * Convert HTTP/ESP32 error code to human-readable string
+ * @param httpCode HTTP status code or negative ESP32 error code
+ * @return Static string describing the error
+ */
+const char* httpErrorToString(int httpCode);
+
+/**
+ * Log network diagnostics: WiFi status, RSSI, and heap memory
+ * Useful for debugging connection issues
+ */
+void logNetworkDiagnostics();
+
 #endif // LOGGER_H

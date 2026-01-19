@@ -26,6 +26,12 @@ public:
     virtual void setStatusCallback(APIStatusCallback callback) override;
 
     /**
+     * Set callback for partial results (called after each stop is queried)
+     * @param callback Function to call with current departures
+     */
+    virtual void setPartialResultsCallback(APIPartialResultsCallback callback) override;
+
+    /**
      * Fetch departures from BVG API
      * @param config Configuration with stop IDs and filters
      * @return APIResult with departures, count, and error status
@@ -34,6 +40,7 @@ public:
 
 private:
     APIStatusCallback statusCallback;
+    APIPartialResultsCallback partialResultsCallback;
     static constexpr int MAX_TEMP_DEPARTURES = MAX_DEPARTURES * 12;  // Buffer for up to 12 stops at full capacity
     static constexpr int JSON_BUFFER_SIZE = 24576;  // 24KB - BVG API returns verbose responses (~1.7KB per departure)
     static constexpr int HTTP_TIMEOUT_MS = 10000;

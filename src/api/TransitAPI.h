@@ -25,6 +25,7 @@ public:
     };
 
     typedef void (*APIStatusCallback)(const char* message);
+    typedef void (*APIPartialResultsCallback)(const Departure* departures, int count, const char* stopName);
 
     virtual ~TransitAPI() = default;
 
@@ -33,6 +34,13 @@ public:
      * @param callback Function to call with status messages
      */
     virtual void setStatusCallback(APIStatusCallback callback) = 0;
+
+    /**
+     * Set callback for partial results (called after each stop is queried)
+     * Enables incremental display updates instead of waiting for all stops
+     * @param callback Function to call with current departures
+     */
+    virtual void setPartialResultsCallback(APIPartialResultsCallback callback) = 0;
 
     /**
      * Fetch departures from transit API

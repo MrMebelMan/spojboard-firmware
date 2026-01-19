@@ -5,13 +5,18 @@
 #include <time.h>
 #include <cstring>
 
-BvgAPI::BvgAPI() : statusCallback(nullptr)
+BvgAPI::BvgAPI() : statusCallback(nullptr), partialResultsCallback(nullptr)
 {
 }
 
 void BvgAPI::setStatusCallback(APIStatusCallback callback)
 {
     statusCallback = callback;
+}
+
+void BvgAPI::setPartialResultsCallback(APIPartialResultsCallback callback)
+{
+    partialResultsCallback = callback;
 }
 
 TransitAPI::APIResult BvgAPI::fetchDepartures(const Config &config)
@@ -59,7 +64,33 @@ TransitAPI::APIResult BvgAPI::fetchDepartures(const Config &config)
             continue;
         }
 
+        int countBefore = tempCount;
         querySingleStop(stopId, config, tempDepartures, tempCount, result.stopName, firstStop, stopIndex);
+
+        // If we got new departures and have a callback, send partial results immediately
+        if (tempCount > countBefore && partialResultsCallback)
+        {
+            // Sort current results
+            qsort(tempDepartures, tempCount, sizeof(Departure), compareDepartures);
+
+            // Copy top departures to result for callback (apply min departure filter)
+            result.departureCount = 0;
+            for (int i = 0; i < tempCount && result.departureCount < MAX_DEPARTURES; i++)
+            {
+                if (tempDepartures[i].eta >= config.minDepartureTime)
+                {
+                    result.departures[result.departureCount] = tempDepartures[i];
+                    result.departureCount++;
+                }
+            }
+
+            logTimestamp();
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Partial results: %d departures, triggering display", result.departureCount);
+            debugPrintln(msg);
+
+            partialResultsCallback(result.departures, result.departureCount, result.stopName);
+        }
 
         // Rate limiting: 1-second delay between API calls
         delay(1000);
@@ -135,10 +166,14 @@ bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
     int httpCode = 0;
 
     // Retry logic: 3 attempts with exponential backoff
+    // IMPORTANT: http.begin() must be called for each attempt, and http.end()
+    // must be called before retrying to avoid socket leaks (TIME_WAIT accumulation)
+    // NOTE: Status callback NOT called during retries - errors shown in status bar
+    //       via the apiError mechanism, keeping departures visible
     for (int attempt = 1; attempt <= 3; attempt++)
     {
+        // Establish connection for this attempt
         http.begin(url);
-        // BVG API requires no authentication
         http.addHeader("Content-Type", "application/json");
 
         httpCode = http.GET();
@@ -150,10 +185,15 @@ bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
         }
         else
         {
+            // Close connection BEFORE logging or retrying to free socket immediately
+            http.end();
+
             logTimestamp();
-            char errMsg[64];
-            snprintf(errMsg, sizeof(errMsg), "BVG API: HTTP error %d (attempt %d/3)", httpCode, attempt);
+            char errMsg[128];
+            snprintf(errMsg, sizeof(errMsg), "BVG API: HTTP %d (%s) attempt %d/3",
+                     httpCode, httpErrorToString(httpCode), attempt);
             debugPrintln(errMsg);
+            logNetworkDiagnostics();
 
             // Don't retry on 4xx client errors
             if (httpCode >= 400 && httpCode < 500)
@@ -161,19 +201,14 @@ bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
                 break;
             }
 
-            // Exponential backoff for retries
+            // Exponential backoff for retries (no full-screen status updates)
             if (attempt < 3)
             {
-                int delayMs = attempt * 2000; // 2s, 4s, 6s
-                if (statusCallback)
-                {
-                    char statusMsg[32];
-                    snprintf(statusMsg, sizeof(statusMsg), "API Retry %d/3", attempt);
-                    statusCallback(statusMsg);
-                }
-
-                // Show error briefly before retry
-                delay(1000);
+                int delayMs = attempt * 2000; // 2s, 4s
+                logTimestamp();
+                char retryMsg[64];
+                snprintf(retryMsg, sizeof(retryMsg), "BVG API: Retry %d/3 after %dms", attempt + 1, delayMs);
+                debugPrintln(retryMsg);
                 delay(delayMs);
             }
         }
@@ -181,7 +216,7 @@ bool BvgAPI::querySingleStop(const char *stopId, const Config &config,
 
     if (!success)
     {
-        http.end();
+        // http.end() already called in the loop on failure
         logTimestamp();
         debugPrintln("BVG API: Failed after retries");
         return false;

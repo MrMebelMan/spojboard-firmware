@@ -68,12 +68,43 @@ bool demoModeActive = false;  // Demo mode flag - stops API polling and display 
 // - CaptivePortal: DNS server and detection endpoints
 // - ConfigWebServer: Web interface handlers
 
+// Forward declarations
+bool isCityConfigured();
+
 // ============================================================================
 // API Status Callback - Updates display during retries
 // ============================================================================
 void onAPIStatus(const char* message)
 {
     displayManager.drawStatus(message, "", COLOR_YELLOW);
+}
+
+// ============================================================================
+// Partial Results Callback - Updates display as each stop is queried
+// ============================================================================
+void onPartialResults(const Departure* partialDepartures, int count, const char* partialStopName)
+{
+    // Update global state with partial results
+    departureCount = count;
+    for (int i = 0; i < count; i++)
+    {
+        departures[i] = partialDepartures[i];
+    }
+    if (partialStopName && partialStopName[0])
+    {
+        strlcpy(stopName, partialStopName, sizeof(stopName));
+    }
+
+    // Clear any previous error since we have data
+    apiError = false;
+
+    // Trigger immediate display update
+    displayManager.updateDisplay(departures, departureCount, config.numDepartures,
+                                 wifiManager.isConnected(), wifiManager.isAPMode(),
+                                 wifiManager.getAPSSID(), wifiManager.getAPPassword(),
+                                 apiError, apiErrorMsg,
+                                 stopName, isCityConfigured(),
+                                 demoModeActive);
 }
 
 // ============================================================================
@@ -328,8 +359,9 @@ void setup()
     }
 #endif
 
-    // Set up API status callback for display updates
+    // Set up API callbacks
     transitAPI->setStatusCallback(onAPIStatus);
+    transitAPI->setPartialResultsCallback(onPartialResults);
 
     // Initialize display with correct brightness from config
     if (!displayManager.begin(config.brightness))
@@ -475,7 +507,7 @@ void loop()
             needsDisplayUpdate = true;
         }
 
-        if (needsDisplayUpdate)
+        if (needsDisplayUpdate || displayManager.needsRedraw())
         {
             needsDisplayUpdate = false;
             displayManager.updateDisplay(departures, departureCount, config.numDepartures,
@@ -545,7 +577,7 @@ void loop()
     }
 
     // Update display
-    if (needsDisplayUpdate)
+    if (needsDisplayUpdate || displayManager.needsRedraw())
     {
         needsDisplayUpdate = false;
         displayManager.updateDisplay(departures, departureCount, config.numDepartures,

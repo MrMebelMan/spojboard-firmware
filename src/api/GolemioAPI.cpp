@@ -37,13 +37,18 @@ static bool parseISO8601(const char* timestamp, struct tm* tm)
     #include <HTTPClient.h>
 #endif
 
-GolemioAPI::GolemioAPI() : statusCallback(nullptr)
+GolemioAPI::GolemioAPI() : statusCallback(nullptr), partialResultsCallback(nullptr)
 {
 }
 
 void GolemioAPI::setStatusCallback(APIStatusCallback callback)
 {
     statusCallback = callback;
+}
+
+void GolemioAPI::setPartialResultsCallback(APIPartialResultsCallback callback)
+{
+    partialResultsCallback = callback;
 }
 
 TransitAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
@@ -91,7 +96,33 @@ TransitAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
             continue;
         }
 
+        int countBefore = tempCount;
         querySingleStop(stopId, config, tempDepartures, tempCount, result.stopName, firstStop, stopIndex);
+
+        // If we got new departures and have a callback, send partial results immediately
+        if (tempCount > countBefore && partialResultsCallback)
+        {
+            // Sort current results
+            qsort(tempDepartures, tempCount, sizeof(Departure), compareDepartures);
+
+            // Copy top departures to result for callback (apply minDepartureTime filter)
+            result.departureCount = 0;
+            for (int i = 0; i < tempCount && result.departureCount < MAX_DEPARTURES; i++)
+            {
+                if (tempDepartures[i].eta > config.minDepartureTime)
+                {
+                    result.departures[result.departureCount] = tempDepartures[i];
+                    result.departureCount++;
+                }
+            }
+
+            logTimestamp();
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Partial results: %d departures, triggering display", result.departureCount);
+            debugPrintln(msg);
+
+            partialResultsCallback(result.departures, result.departureCount, result.stopName);
+        }
 
         delay(1000);
 
@@ -114,11 +145,11 @@ TransitAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
     result.departureCount = 0;
     for (int i = 0; i < tempCount && result.departureCount < MAX_DEPARTURES; i++)
     {
-        // if (tempDepartures[i].eta >= config.minDepartureTime) // removed as we use API for this now
-        // {
+        if (tempDepartures[i].eta > config.minDepartureTime)
+        {
             result.departures[result.departureCount] = tempDepartures[i];
             result.departureCount++;
-        // }
+        }
     }
 
     char filterMsg[64];
@@ -165,16 +196,23 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
     HttpClient http(sslClient, "api.golemio.cz", 443);
     http.setTimeout(HTTP_TIMEOUT_MS);
 
+    logTimestamp();
+    debugPrintln("API: Starting HTTP request (M4)...");
+
     for (int retry = 0; retry < MAX_RETRIES; retry++)
     {
         if (retry > 0)
         {
             int delayMs = 2000 * retry;
-            char statusMsg[64];
-            snprintf(statusMsg, sizeof(statusMsg), "API Retry %d/%d", retry, MAX_RETRIES);
-            if (statusCallback) statusCallback(statusMsg);
+            char retryMsg[64];
+            snprintf(retryMsg, sizeof(retryMsg), "API: Retry %d/%d after %dms", retry + 1, MAX_RETRIES, delayMs);
+            logTimestamp();
+            debugPrintln(retryMsg);
             delay(delayMs);
         }
+
+        logTimestamp();
+        debugPrintln("API: Sending request...");
 
         http.beginRequest();
         http.get(path);
@@ -182,13 +220,34 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
         http.sendHeader("Content-Type", "application/json");
         http.endRequest();
 
+        logTimestamp();
+        debugPrintln("API: Waiting for response...");
+
         httpCode = http.responseStatusCode();
+
+        logTimestamp();
+        char httpMsg[64];
+        snprintf(httpMsg, sizeof(httpMsg), "API: HTTP response code: %d", httpCode);
+        debugPrintln(httpMsg);
 
         if (httpCode == 200)
         {
+            logTimestamp();
+            debugPrintln("API: Reading response body...");
             payload = http.responseBody();
+            logTimestamp();
+            char bodyMsg[64];
+            snprintf(bodyMsg, sizeof(bodyMsg), "API: Response body length: %d", payload.length());
+            debugPrintln(bodyMsg);
             break;
         }
+
+        // Log error with diagnostics
+        logTimestamp();
+        char errMsg[128];
+        snprintf(errMsg, sizeof(errMsg), "API: HTTP %d attempt %d/%d", httpCode, retry + 1, MAX_RETRIES);
+        debugPrintln(errMsg);
+        logNetworkDiagnostics();
 
         if (httpCode >= 400 && httpCode < 500) break;  // Don't retry client errors
     }
@@ -198,32 +257,29 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
     HTTPClient http;
     char url[512];
     snprintf(url, sizeof(url), "https://api.golemio.cz%s", path);
-
-    http.begin(url);
-    http.addHeader("x-access-token", config.pragueApiKey);
-    http.addHeader("Content-Type", "application/json");
     http.setTimeout(HTTP_TIMEOUT_MS);
 
+    // Retry logic: establish fresh connection for each attempt
+    // IMPORTANT: http.end() must be called before retrying to avoid socket leaks
+    // NOTE: Status callback NOT called during retries - errors shown in status bar
+    //       via the apiError mechanism, keeping departures visible
     for (int retry = 0; retry < MAX_RETRIES; retry++)
     {
         if (retry > 0)
         {
             int delayMs = 2000 * retry; // 2s, 4s, 6s backoff
 
-            // Update display with retry status
-            char statusMsg[64];
-            snprintf(statusMsg, sizeof(statusMsg), "API Retry %d/%d", retry, MAX_RETRIES);
-            if (statusCallback)
-            {
-                statusCallback(statusMsg);
-            }
-
             char retryMsg[64];
-            snprintf(retryMsg, sizeof(retryMsg), "API: Retry %d after %dms", retry, delayMs);
+            snprintf(retryMsg, sizeof(retryMsg), "API: Retry %d/%d after %dms", retry + 1, MAX_RETRIES, delayMs);
             logTimestamp();
             debugPrintln(retryMsg);
             delay(delayMs);
         }
+
+        // Establish connection for this attempt
+        http.begin(url);
+        http.addHeader("x-access-token", config.pragueApiKey);
+        http.addHeader("Content-Type", "application/json");
 
         httpCode = http.GET();
 
@@ -234,40 +290,36 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
             break;
         }
 
+        // Close connection BEFORE logging or retrying to free socket immediately
+        http.end();
+
         // Don't retry on 4xx errors (client errors - won't fix with retry)
         if (httpCode >= 400 && httpCode < 500)
         {
-            char clientErrMsg[64];
-            snprintf(clientErrMsg, sizeof(clientErrMsg), "API: Client error %d - no retry", httpCode);
+            char clientErrMsg[128];
+            snprintf(clientErrMsg, sizeof(clientErrMsg), "API: Client error %d (%s) - no retry",
+                     httpCode, httpErrorToString(httpCode));
             logTimestamp();
             debugPrintln(clientErrMsg);
+            logNetworkDiagnostics();
             break;
         }
 
-        // Log retry-able errors
+        // Log retry-able errors with diagnostics
+        char errMsg[128];
         if (retry < MAX_RETRIES - 1)
         {
-            char retryableErrMsg[64];
-            snprintf(retryableErrMsg, sizeof(retryableErrMsg), "API Error: HTTP %d - will retry", httpCode);
-            logTimestamp();
-            debugPrintln(retryableErrMsg);
-
-            // Show error on display before first retry
-            if (retry == 0 && statusCallback)
-            {
-                char errorMsg[64];
-                if (httpCode == -1)
-                {
-                    snprintf(errorMsg, sizeof(errorMsg), "API Error: No Connection");
-                }
-                else
-                {
-                    snprintf(errorMsg, sizeof(errorMsg), "API Error: HTTP %d", httpCode);
-                }
-                statusCallback(errorMsg);
-                delay(1000); // Show error message briefly
-            }
+            snprintf(errMsg, sizeof(errMsg), "API: HTTP %d (%s) attempt %d/%d - will retry",
+                     httpCode, httpErrorToString(httpCode), retry + 1, MAX_RETRIES);
         }
+        else
+        {
+            snprintf(errMsg, sizeof(errMsg), "API: HTTP %d (%s) - all %d attempts failed",
+                     httpCode, httpErrorToString(httpCode), MAX_RETRIES);
+        }
+        logTimestamp();
+        debugPrintln(errMsg);
+        logNetworkDiagnostics();
     }
 #endif
 

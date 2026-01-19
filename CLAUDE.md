@@ -114,17 +114,34 @@ The device operates in two modes with an optional demo state:
 - **Demo Mode** (`demoModeActive=true`): Pauses API polling and automatic display updates, shows custom sample departures
 
 Transitions:
-- Boot → Try STA mode → If fail (20 attempts/~10s) → AP mode
+- Boot → WiFi reset (disconnect + 2s delay) → Try STA mode (20 attempts)
+  - If `noApFallback=false`: Fail → AP mode
+  - If `noApFallback=true`: Fail → Retry indefinitely every 5s (never enters AP mode)
 - AP mode + config save → Restart → Try STA mode
 - STA mode connection loss → Auto-reconnect attempts every 30s
 - Demo start → Set demoModeActive=true, stop API polling
 - Demo stop → Set demoModeActive=false, resume normal operation
 
+**WiFi Connection Stability:**
+ESP32 WiFi requires proper reset sequence on startup for reliable connection:
+```cpp
+WiFi.disconnect(true);  // Clear any stale state
+delay(500);
+WiFi.mode(WIFI_STA);
+delay(2000);            // Allow WiFi hardware to stabilize
+WiFi.begin(ssid, password);
+```
+
 ### Display Rendering System
 
 - **Row-based layout**: 4 rows × 8 pixels each on 128×32 matrix
-  - Rows 0-2: Departure entries (line number, destination, ETA) - shared by normal and demo modes
-  - Row 3: Date/time status bar with pipe separator (e.g., "Mon| Feb 15 14:35")
+  - Rows 0-2: Departure entries (line number, L/R indicator, destination, ETA) - shared by normal and demo modes
+  - Row 3: Date/time status bar with pipe separator (e.g., "Mon| Feb 15 14:35"), or error message in red if API error
+- **Multi-stop direction indicators**: Colored L/R letters before destination show which stop the departure is from
+  - L (green) = stop index 0 (first configured stop)
+  - R (blue) = stop index 1 (second configured stop)
+  - Helps distinguish direction when monitoring both sides of a stop
+- **ETA color coding**: ETA turns red when ≤5 minutes to warn of imminent departures
 - **Uniform route boxes**: All line numbers displayed in 18-pixel wide black background boxes (fits 1-3 characters)
   - Route numbers horizontally centered within boxes using `getTextBounds()` with proper x1 offset compensation
   - All destinations start at fixed X position (22 pixels) for consistent vertical alignment
@@ -153,6 +170,15 @@ Transitions:
   - Located in `/fonts` directory
 - **UTF-8 Conversion**: API responses in UTF-8 are automatically converted to ISO-8859-2 encoding using in-place conversion (`utf8tocp()`)
 - **Non-blocking updates**: `isDrawing` flag prevents concurrent display access
+- **Screen on/off control**: Display can be turned off via HTTP endpoint (`/off`) or programmatically
+  - `turnOff()`: Sets `screenOff` flag, fills screen black, sets brightness to 0 (ESP32) or just fills black (M4)
+  - `turnOn()`: Clears `screenOff` flag, sets `forceRedraw` flag, restores brightness (ESP32)
+  - When `screenOff=true`, all `updateDisplay()` calls return immediately without drawing
+  - `forceRedraw` flag ensures immediate display update after turning on (checked in main loop)
+- **API error display**: When API errors occur, departures remain visible and error message shown in status bar
+  - Row 3 displays "ERR: [message]" in red instead of date/time
+  - Departures from last successful fetch remain on screen
+  - Error clears automatically on next successful API call
 
 ### Memory Management
 
@@ -253,9 +279,11 @@ struct Departure {
     char line[8];           // Route short name
     char destination[32];   // Trip headsign (with abbreviations applied for Prague)
     int eta;                // Calculated from predicted/scheduled timestamp
+    time_t departureTime;   // Unix timestamp of departure
     bool hasAC;             // trip.is_air_conditioned (Prague only)
     bool isDelayed;         // From delay field
     int delayMinutes;       // Delay in minutes
+    int stopIndex;          // Which stop this departure is from (0, 1, 2, ...)
 }
 ```
 
@@ -287,14 +315,15 @@ Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to pres
 - **Display library**: Adafruit Protomatter (4-bit depth, 4 address pins for 32-row 1:16 scan)
 - **Memory**: 192KB RAM, 496KB Flash (~8% RAM, ~21% Flash used)
 - **Storage**: FlashStorage_SAMD for persistent config
+- **Web server**: Minimal implementation - only `/on` and `/off` endpoints for screen control
 - **Limitations**:
-  - No web configuration UI (credentials hardcoded in AppConfig.h)
+  - No web configuration UI (credentials hardcoded via credentials.h)
   - No captive portal (DNSServer not available)
   - No Berlin/BVG API support (excluded from build)
   - No GitHub OTA updates (manual upload only)
   - No runtime brightness control (set via bit depth at init)
   - No telnet logging
-- **Configuration**: Edit `DEFAULT_WIFI_SSID`, `DEFAULT_WIFI_PASSWORD`, `DEFAULT_GOLEMIO_API_KEY` in AppConfig.h
+- **Configuration**: Create `src/config/credentials.h` from template (see Private Credentials section)
 
 ## Web Interface Routes
 
@@ -302,6 +331,8 @@ Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to pres
 - `POST /save` - Save configuration (triggers restart if WiFi or city changed)
 - `POST /refresh` - Force immediate API call
 - `POST /reboot` - Device restart
+- `GET /on` - Turn display on (works on both ESP32-S3 and M4)
+- `GET /off` - Turn display off (works on both ESP32-S3 and M4)
 - `GET /demo` - Demo configuration page with editable sample departures
 - `POST /start-demo` - Start demo mode with custom departure data (JSON)
 - `POST /stop-demo` - Stop demo mode and resume normal operation
@@ -313,6 +344,16 @@ Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to pres
 - `POST /download-update` - Download and install from GitHub (AJAX)
 - Captive portal detection: `/generate_204`, `/hotspot-detect.html`, `/ncsi.txt`, `/success.txt`
 - `404 handler` - Redirects to root (captive portal behavior)
+
+**Screen On/Off Control:**
+```bash
+# Turn display off (screen goes black, stops updates)
+curl http://[device-ip]/off
+
+# Turn display on (resumes normal operation)
+curl http://[device-ip]/on
+```
+Both endpoints return plain text "OK" on success. No authentication required.
 
 ## Configuration Storage
 
@@ -330,6 +371,7 @@ NVS namespace: "transport"
 - `lineColorMap` (String, max 256 chars) - Custom line color mappings (format: "LINE=COLOR,LINE=COLOR,...")
   - Position-based wildcards: asterisks as position placeholders (e.g., "9*=CYAN", "4**=BLUE")
   - Falls back to hardcoded defaults if empty or no match
+- `noApFallback` (Bool) - If true, keep retrying WiFi instead of falling back to AP mode
 - `debugMode` (Bool) - Enable telnet logging
 - `configured` (Bool)
 
@@ -339,9 +381,36 @@ NVS namespace: "transport"
 - Automatic migration on first load with new firmware
 - Old keys removed from NVS after migration
 
-Defaults: WiFi from DEFAULT_WIFI_SSID/PASSWORD defines, city "Prague", 60s refresh, 3 departures, 3min minimum departure time, brightness 90, empty lineColorMap (uses hardcoded defaults), debug mode disabled
+Defaults: WiFi from credentials.h defines, city "Prague", 300s refresh (5 min), 3 departures, 3min minimum departure time, brightness 90, empty lineColorMap (uses hardcoded defaults), noApFallback true, debug mode disabled
 
 **First-time setup (AP Mode)**: Only WiFi credentials required, city and stop IDs optional. Demo mode available before API configuration.
+
+## Private Credentials
+
+For public repositories, sensitive credentials are stored in a gitignored file:
+
+**File**: `src/config/credentials.h` (gitignored, never committed)
+
+**Template**: `src/config/credentials.h.example` (committed, shows required format)
+
+**Setup:**
+1. Copy `credentials.h.example` to `credentials.h`
+2. Fill in your actual values
+3. Build and flash firmware
+
+**Required defines:**
+```cpp
+#define DEFAULT_WIFI_SSID "your_wifi_ssid"
+#define DEFAULT_WIFI_PASSWORD "your_wifi_password"
+#define DEFAULT_GOLEMIO_API_KEY "your_golemio_api_key"
+#define DEFAULT_PRAGUE_STOP_IDS "U899Z3P,U899Z4P"  // comma-separated stop IDs
+```
+
+**Notes:**
+- credentials.h is included by AppConfig.h
+- These values are compiled into firmware as defaults
+- On ESP32-S3, values can be changed via web UI and are persisted to NVS
+- On M4, these are the only way to configure the device (no web config UI)
 
 ## Time Handling
 

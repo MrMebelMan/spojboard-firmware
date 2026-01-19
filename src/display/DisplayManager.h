@@ -105,9 +105,24 @@ public:
      */
     void drawDemo(const Departure* departures, int departureCount, const char* stopName);
 
+    /**
+     * Turn screen off (fill black, pause updates)
+     */
+    void turnOff();
+
+    /**
+     * Turn screen on (resume updates)
+     */
+    void turnOn();
+
+    bool isScreenOff() const { return screenOff; }
+    bool needsRedraw() { bool r = forceRedraw; forceRedraw = false; return r; }
+
 private:
     DisplayType* display;
     bool isDrawing;
+    bool screenOff;
+    bool forceRedraw;
     const Config* config;
     char ipStringBuffer[32];  // Buffer for IP string
 
