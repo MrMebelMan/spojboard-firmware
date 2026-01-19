@@ -180,17 +180,17 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     display->setCursor(textX, y + 7);
     display->print(lineConverted);
 
-    // Direction indicator (L/R) before destination based on stop index
+    // Direction indicator (R/L) before destination based on stop index
     int destX = 22; // Fixed position for all destinations (18px max route width + 4px gap)
     if (dep.stopIndex == 0) {
-        display->setTextColor(COLOR_GREEN);
-        display->setCursor(destX, y + 7);
-        display->print("L");
-        destX += 8;
-    } else if (dep.stopIndex == 1) {
         display->setTextColor(COLOR_BLUE);
         display->setCursor(destX, y + 7);
         display->print("R");
+        destX += 8;
+    } else if (dep.stopIndex == 1) {
+        display->setTextColor(COLOR_GREEN);
+        display->setCursor(destX, y + 7);
+        display->print("L");
         destX += 8;
     }
 

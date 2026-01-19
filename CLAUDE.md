@@ -163,9 +163,9 @@ WiFi.begin(ssid, password);
 - **Row-based layout**: 4 rows × 8 pixels each on 128×32 matrix
   - Rows 0-2: Departure entries (line number, L/R indicator, destination, ETA) - shared by normal and demo modes
   - Row 3: Date/time status bar (e.g., "Mon Feb 15 14:35"), or error message in red if API error
-- **Multi-stop direction indicators**: Colored L/R letters before destination show which stop the departure is from
-  - L (green) = stop index 0 (first configured stop)
-  - R (blue) = stop index 1 (second configured stop)
+- **Multi-stop direction indicators**: Colored R/L letters before destination show which stop the departure is from
+  - R (blue) = stop index 0 (first configured stop)
+  - L (green) = stop index 1 (second configured stop)
   - Helps distinguish direction when monitoring both sides of a stop
 - **ETA color coding**: ETA turns red when ≤5 minutes to warn of imminent departures
 - **Uniform route boxes**: All line numbers displayed in 18-pixel wide black background boxes (fits 1-3 characters)
