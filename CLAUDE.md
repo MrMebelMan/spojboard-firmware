@@ -343,6 +343,8 @@ while (http.available()) {
 - Network diagnostics logged on each failure
 
 **Socket Leak Prevention (Critical):**
+
+*ESP32 (HTTPClient):*
 ```cpp
 // WRONG: http.begin() outside loop causes socket exhaustion
 http.begin(url);
@@ -359,6 +361,25 @@ for (int retry = 0; retry < 3; retry++) {
     if (httpCode == 200) break;
     http.end();  // Close socket BEFORE retry
 }
+```
+
+*M4 (ArduinoHttpClient + WiFiNINA):*
+WiFiNINA has only ~5 sockets. Must call `http.stop()` after EVERY request:
+```cpp
+HttpClient http(sslClient, "api.golemio.cz", 443);
+for (int retry = 0; retry < 3; retry++) {
+    http.beginRequest();
+    http.get(path);
+    http.endRequest();
+    httpCode = http.responseStatusCode();
+    if (httpCode == 200) {
+        // read response...
+        http.stop();  // Close after success
+        break;
+    }
+    http.stop();  // Close BEFORE retry - critical!
+}
+http.stop();  // Ensure cleanup after all attempts
 ```
 
 **Error Display:**

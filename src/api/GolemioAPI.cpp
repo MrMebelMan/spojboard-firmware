@@ -254,12 +254,18 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
                 }
             }
 
+            // Close connection to free socket
+            http.stop();
+
             logTimestamp();
             char bodyMsg[64];
             snprintf(bodyMsg, sizeof(bodyMsg), "API: Response body length: %d", payload.length());
             debugPrintln(bodyMsg);
             break;
         }
+
+        // Close connection before retry to free socket (CRITICAL for M4 socket pool)
+        http.stop();
 
         // Log error with diagnostics
         logTimestamp();
@@ -270,6 +276,9 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
 
         if (httpCode >= 400 && httpCode < 500) break;  // Don't retry client errors
     }
+
+    // Ensure connection is closed after all attempts (in case of final failure)
+    http.stop();
 
 #else
     // ESP32 uses native HTTPClient
