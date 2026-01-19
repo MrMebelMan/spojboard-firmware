@@ -234,7 +234,26 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
         {
             logTimestamp();
             debugPrintln("API: Reading response body...");
-            payload = http.responseBody();
+
+            // Get content length and pre-allocate (much faster than growing String)
+            int contentLen = http.contentLength();
+            if (contentLen > 0 && contentLen < JSON_BUFFER_SIZE)
+            {
+                payload.reserve(contentLen + 1);
+            }
+
+            // Read in chunks (much faster than responseBody()'s character-by-character)
+            char buffer[512];
+            while (http.available())
+            {
+                int bytesRead = http.read((uint8_t *)buffer, sizeof(buffer) - 1);
+                if (bytesRead > 0)
+                {
+                    buffer[bytesRead] = '\0';
+                    payload += buffer;
+                }
+            }
+
             logTimestamp();
             char bodyMsg[64];
             snprintf(bodyMsg, sizeof(bodyMsg), "API: Response body length: %d", payload.length());

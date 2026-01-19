@@ -333,15 +333,20 @@ void setup()
     Serial.println("║   Smart Panel for Onward Journeys     ║");
     Serial.println("╚═══════════════════════════════════════╝\n");
 
+    Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Starting...");
+
     logMemory("boot");
 
     // Load configuration FIRST (needed for display brightness)
+    Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Loading config...");
     loadConfig(config);
+    Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Config loaded");
 
     // Initialize logger with config for debug mode checks (MUST be after loadConfig)
     initLogger(&config);
 
     // Select transit API based on city configuration
+    Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Selecting API...");
 #if defined(MATRIX_PORTAL_M4)
     // M4 only supports Prague (Golemio) API
     transitAPI = &golemioAPI;
@@ -364,30 +369,35 @@ void setup()
     transitAPI->setPartialResultsCallback(onPartialResults);
 
     // Initialize display with correct brightness from config
+    Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Initializing display...");
     if (!displayManager.begin(config.brightness))
     {
         debugPrintln("Display initialization failed!");
         return;
     }
     displayManager.setConfig(&config);
+    Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Display ready");
     logMemory("display_init");
 
     displayManager.drawStatus("Starting SpojBoard...", "FW v" FIRMWARE_RELEASE, COLOR_WHITE);
+    Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Connecting WiFi...");
 
-    // Try to connect to WiFi
-    bool wifiConnected = wifiManager.connectSTA(config, 20, 500);
+    // Try to connect to WiFi (5 attempts × 500ms = 2.5s max)
+    bool wifiConnected = wifiManager.connectSTA(config, 5, 500);
+    Serial.print("["); Serial.print(millis()); Serial.print("] BOOT: WiFi result: "); Serial.println(wifiConnected ? "connected" : "failed");
 
     // If noApFallback is true, keep retrying WiFi instead of falling back to AP
     while (!wifiConnected && config.noApFallback)
     {
         displayManager.drawStatus("WiFi Failed!", "Retrying...", COLOR_RED);
-        delay(5000);
-        wifiConnected = wifiManager.connectSTA(config, 20, 500);
+        delay(2000);
+        wifiConnected = wifiManager.connectSTA(config, 5, 500);
     }
 
     if (!wifiConnected)
     {
         // Connection failed, start AP mode
+        Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Starting AP mode...");
         displayManager.drawStatus("WiFi Failed!", "Starting AP mode...", COLOR_RED);
         delay(1500);
 
@@ -403,6 +413,7 @@ void setup()
         {
             debugPrintln("Captive portal failed to start!");
         }
+        Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: AP mode ready");
     }
     else
     {
@@ -411,6 +422,7 @@ void setup()
         IPAddress ip = WiFi.localIP();
         snprintf(ipStr, sizeof(ipStr), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
         displayManager.drawStatus("WiFi Connected!", ipStr, COLOR_GREEN);
+        Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Showing IP (1.5s delay)...");
         delay(1500);
 
         // Start telnet logger if debug mode enabled
@@ -423,12 +435,14 @@ void setup()
     }
 
     // Initialize web server with callbacks
+    Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Starting web server...");
     webServer.setCallbacks(onConfigSave, onRefresh, onReboot, onDemoStart, onDemoStop);
     webServer.setDisplayManager(&displayManager); // For OTA progress updates
     if (!webServer.begin())
     {
         debugPrintln("Web server failed to start!");
     }
+    Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Web server ready");
 
     // Setup captive portal detection handlers (ESP32 only - M4 has no web server)
 #if !defined(MATRIX_PORTAL_M4)
@@ -441,12 +455,12 @@ void setup()
     // Setup NTP time if connected to WiFi
     if (wifiManager.isConnected() && !wifiManager.isAPMode())
     {
-        logTimestamp();
-        debugPrintln("Syncing time...");
+        Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Syncing NTP time...");
         initTimeSync();
 
         if (syncTime(10, 500))
         {
+            Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: NTP synced");
             char timeStr[32];
             if (getFormattedTime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S"))
             {
@@ -456,18 +470,23 @@ void setup()
                 debugPrintln(msg);
             }
         }
+        else
+        {
+            Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: NTP sync failed");
+        }
 
         // Initial API call if configured
         if (isCityConfigured())
         {
+            Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Fetching initial departures...");
             fetchDepartures();
+            Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Initial fetch complete");
             lastApiCall = millis(); // Prevent immediate second call in loop()
         }
     }
 
     needsDisplayUpdate = true;
-    logTimestamp();
-    debugPrintln("Setup complete!\n");
+    Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Setup complete!");
 }
 
 // ============================================================================
