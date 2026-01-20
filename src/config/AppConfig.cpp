@@ -16,7 +16,7 @@
 
 // Storage signature for validation
 // Bump this value to invalidate stored configs and force fresh defaults
-#define CONFIG_SIGNATURE 0x53504F4B  // Bumped to add weather fields
+#define CONFIG_SIGNATURE 0x53504F4C  // Bumped to change minDepartureTime default
 
 struct StoredConfig {
     uint32_t signature;

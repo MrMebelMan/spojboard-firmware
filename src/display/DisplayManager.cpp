@@ -247,7 +247,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     {
         display->setTextColor(COLOR_RED);
     }
-    else if (dep.eta <= 7)
+    else if (dep.eta == 6)
     {
         display->setTextColor(COLOR_ORANGE);
     }
