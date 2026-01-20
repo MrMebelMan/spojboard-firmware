@@ -186,7 +186,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     display->print(lineConverted);
 
     // Direction indicator (R/L) before destination based on stop index
-    int destX = 22; // Fixed position for all destinations (18px max route width + 4px gap)
+    int destX = 20; // Fixed position for all destinations (18px max route width + 2px gap)
     if (dep.stopIndex == 0) {
         display->setTextColor(COLOR_GREEN);
         display->setCursor(destX, y + 7);
@@ -203,7 +203,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     display->setTextColor(COLOR_WHITE);
 
     int destLen = strlen(destConverted);
-    int normalMaxChars = (dep.stopIndex <= 1) ? 14 : 15;
+    int normalMaxChars = (dep.stopIndex <= 1) ? 15 : 16;
     const GFXfont* destFont;
     int maxChars;
 
@@ -213,7 +213,7 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     {
         // Long destination - use condensed font
         destFont = fontCondensed;
-        int condensedMax = (dep.eta >= 10 || dep.eta < 1) ? 22 : 23;
+        int condensedMax = (dep.eta >= 10 || dep.eta < 1) ? 23 : 24;
         maxChars = (dep.stopIndex <= 1) ? condensedMax - 1 : condensedMax;
     }
     else
