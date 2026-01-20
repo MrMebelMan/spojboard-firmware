@@ -13,6 +13,7 @@ Transit departure display that fetches real-time data from multiple transit APIs
 **Key Features:**
 - Multi-platform support: ESP32-S3 (full features) and Matrix Portal M4 (Prague/Golemio only)
 - Multi-city support: Prague (Golemio API) and Berlin (BVG API) - ESP32-S3 only
+- Weather display: Current temperature and conditions from Open-Meteo API (both platforms)
 - Standalone operation with direct API access
 - WiFi captive portal for configuration (ESP32-S3 only)
 - Persistent settings in flash (NVS on ESP32, FlashStorage on M4)
@@ -110,6 +111,7 @@ src/
 │   ├── TransitAPI.h                 # Abstract base class for transit APIs
 │   ├── GolemioAPI.h/cpp             # Prague Golemio API client
 │   ├── BvgAPI.h/cpp                 # Berlin BVG API client
+│   ├── WeatherAPI.h/cpp             # Open-Meteo weather API client
 │   ├── DepartureData.h/cpp          # Data structures & utilities
 ├── network/
 │   ├── WiFiManager.h/cpp            # WiFi connection & AP mode
@@ -162,7 +164,7 @@ WiFi.begin(ssid, password);
 
 - **Row-based layout**: 4 rows × 8 pixels each on 128×32 matrix
   - Rows 0-2: Departure entries (line number, L/R indicator, destination, ETA) - shared by normal and demo modes
-  - Row 3: Date/time status bar (e.g., "Mon Feb 15 14:35"), or error message in red if API error
+  - Row 3: Status bar with date, weather (icon + temperature), and time (e.g., "Mon ☀-3° 14:35"), or error message in red if API error
 - **Multi-stop direction indicators**: Colored R/L letters before destination show which stop the departure is from
   - R (blue) = stop index 0 (first configured stop)
   - L (green) = stop index 1 (second configured stop)
@@ -192,8 +194,9 @@ WiFi.begin(ssid, password);
   - `DepartureMono4pt8b` (small font) - Used for compact text, line numbers, status
   - `DepartureMono5pt8b` (medium font) - Used for destinations, larger text, ETAs
   - `DepartureMonoCondensed5pt8b` (condensed font) - Automatically used for long destinations (>16 chars)
+  - `DepartureWeather4pt8b` (weather icon font) - Weather condition icons (sun, cloud, rain, snow, etc.)
   - Full ISO-8859-2 character set (0x20-0xDF) including Czech, German, Polish, Hungarian characters (ž, š, č, ř, ň, ť, ď, ß, ẞ, etc.)
-  - Located in `/fonts` directory
+  - Located in `/src/fonts` directory
 - **UTF-8 Conversion**: API responses in UTF-8 are automatically converted to ISO-8859-2 encoding using in-place conversion (`utf8tocp()`)
 - **Non-blocking updates**: `isDrawing` flag prevents concurrent display access
 - **Screen on/off control**: Display can be turned off via HTTP endpoint (`/off`) or programmatically
@@ -326,6 +329,43 @@ while (http.available()) {
 - Configuration fields: `config.berlinStopIds` (no API key needed)
 - JSON buffer: 24KB (BVG responses are verbose, ~1.7KB per departure)
 - Find IDs at: https://v6.bvg.transport.rest/ (use /locations endpoint)
+
+### Open-Meteo Weather API
+- Endpoint: `http://api.open-meteo.com/v1/forecast` (M4 uses HTTP, ESP32 uses HTTPS)
+- Authentication: None required (free and open source)
+- Query parameters: `latitude`, `longitude`, `hourly=temperature_2m,weathercode`, `forecast_hours=3`, `timezone=auto`
+- Response format: JSON with hourly arrays
+- Configuration fields: `config.weatherLatitude`, `config.weatherLongitude`, `config.weatherEnabled`, `config.weatherRefreshInterval`
+- JSON buffer: 2KB (responses are small)
+- Default refresh: 15 minutes
+
+**M4 Platform Note:**
+M4 uses plain HTTP (port 80) instead of HTTPS because WiFiNINA's SSL handshake to open-meteo.com times out. The Golemio API (api.golemio.cz) works fine with SSL on M4, but open-meteo.com doesn't. Since weather data isn't sensitive, HTTP is acceptable.
+
+**Weather Data Structure:**
+```cpp
+struct WeatherData {
+    int temperature;       // Temperature in Celsius
+    int weatherCode;       // WMO weather code (0-99)
+    time_t timestamp;      // Unix timestamp when fetched
+    bool hasError;         // True if fetch encountered an error
+    char errorMsg[64];     // Error message if hasError is true
+};
+```
+
+**WMO Weather Codes → Icons:**
+- 0: Clear sky → Sun icon (yellow)
+- 1-3: Partly cloudy/cloudy → Cloud icon (white)
+- 45-48: Fog → Fog icon (purple)
+- 51-67: Drizzle/Rain → Rain icon (cyan)
+- 71-86: Snow/Sleet → Snow icon (blue)
+- 95+: Thunderstorm → Storm icon (red)
+
+**Temperature Color Coding:**
+- > 25°C: Red (hot)
+- 17-25°C: Yellow (warm)
+- 8-16°C: White (mild)
+- < 8°C: Blue (cold)
 
 ### Multi-Stop Behavior
 - Multiple stops supported via comma separation (max 12 stops)
@@ -487,6 +527,10 @@ NVS namespace: "transport"
   - Falls back to hardcoded defaults if empty or no match
 - `noApFallback` (Bool) - If true, keep retrying WiFi instead of falling back to AP mode
 - `debugMode` (Bool) - Enable telnet logging
+- `weatherEnable` (Bool) - Enable weather display (ESP32: default false, M4: default true)
+- `weatherLat` (Float) - Weather location latitude
+- `weatherLon` (Float) - Weather location longitude
+- `weatherRefresh` (Int, minutes, 1-60) - Weather refresh interval (default: 15)
 - `configured` (Bool)
 
 **Backward Compatibility Migration**:
@@ -518,6 +562,10 @@ For public repositories, sensitive credentials are stored in a gitignored file:
 #define DEFAULT_WIFI_PASSWORD "your_wifi_password"
 #define DEFAULT_GOLEMIO_API_KEY "your_golemio_api_key"
 #define DEFAULT_PRAGUE_STOP_IDS "U899Z3P,U899Z4P"  // comma-separated stop IDs
+
+// Weather location (for Open-Meteo API - no key required)
+#define DEFAULT_WEATHER_LATITUDE 50.0755f   // Prague default
+#define DEFAULT_WEATHER_LONGITUDE 14.4378f  // Prague default
 ```
 
 **Notes:**

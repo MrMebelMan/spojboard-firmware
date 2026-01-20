@@ -25,14 +25,26 @@ uint16_t COLOR_CYAN;
 void initColors()
 {
     COLOR_WHITE = RGB565(255, 255, 255);
-    COLOR_YELLOW = RGB565(255, 255, 0);
     COLOR_RED = RGB565(255, 0, 0);
+    COLOR_BLACK = RGB565(0, 0, 0);
+
+#if defined(MATRIX_PORTAL_M4)
+    // M4 Protomatter has green/blue channels swapped
+    COLOR_YELLOW = RGB565(255, 0, 255);   // Magenta in RGB = Yellow on display
+    COLOR_GREEN = RGB565(0, 0, 255);      // Blue in RGB = Green on display
+    COLOR_BLUE = RGB565(0, 255, 0);       // Green in RGB = Blue on display
+    COLOR_ORANGE = RGB565(255, 0, 165);   // Swap G/B
+    COLOR_PURPLE = RGB565(128, 128, 0);   // Swap G/B
+    COLOR_CYAN = RGB565(0, 255, 255);     // Cyan stays same (G+B swapped = same)
+#else
+    // ESP32 has standard RGB mapping
+    COLOR_YELLOW = RGB565(255, 255, 0);
     COLOR_GREEN = RGB565(0, 255, 0);
     COLOR_BLUE = RGB565(0, 0, 255);
     COLOR_ORANGE = RGB565(255, 165, 0);
     COLOR_PURPLE = RGB565(128, 0, 128);
-    COLOR_BLACK = RGB565(0, 0, 0);
     COLOR_CYAN = RGB565(0, 255, 255);
+#endif
 }
 
 // ============================================================================

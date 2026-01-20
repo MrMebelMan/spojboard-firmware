@@ -4,10 +4,10 @@ An LED matrix display showing real-time transit departures. Supports multiple ha
 
 **SPOJ** = **S**mart **P**anel for **O**nward **J**ourneys (also "spoj" = connection/service in Czech)
 
-| Platform | Transit Networks | Web Config | OTA Updates |
-|----------|-----------------|------------|-------------|
-| **MatrixPortal ESP32-S3** | Prague + Berlin | ✅ Full UI | ✅ GitHub + Manual |
-| **Matrix Portal M4** | Prague only | ❌ Hardcoded | ❌ Manual only |
+| Platform | Transit Networks | Weather | Web Config | OTA Updates |
+|----------|-----------------|---------|------------|-------------|
+| **MatrixPortal ESP32-S3** | Prague + Berlin | ✅ | ✅ Full UI | ✅ GitHub + Manual |
+| **Matrix Portal M4** | Prague only | ✅ | ❌ Hardcoded | ❌ Manual only |
 
 Standalone operation, no external server required.
 
@@ -25,6 +25,7 @@ Standalone operation, no external server required.
 ## Features
 
 - **Multi-City Support**: Prague (Golemio API) and Berlin (BVG API) with per-city configuration
+- **Weather Display**: Current temperature and conditions from Open-Meteo API (free, no API key required)
 - **Direct API Access**: Fetches departure data every 10-300 seconds (configurable)
 - **Local ETA Updates**: Recalculates ETAs every 10 seconds from cached timestamps without additional API calls - reduces server load while keeping display fresh
 - **Extended Buffer**: Always fetches and caches 12 departures per stop for better sorting and filtering
@@ -62,13 +63,18 @@ Standalone operation, no external server required.
   - No GitHub OTA updates (manual .bin upload only)
   - No captive portal for WiFi setup
 
-**M4 Configuration**: Edit these in `src/config/AppConfig.h` before building:
+**M4 Configuration**: Create `src/config/credentials.h` from the template and edit before building:
 ```cpp
 #define DEFAULT_WIFI_SSID "YourNetwork"
 #define DEFAULT_WIFI_PASSWORD "YourPassword"
 #define DEFAULT_GOLEMIO_API_KEY "your-api-key"
+#define DEFAULT_PRAGUE_STOP_IDS "U899Z3P,U899Z4P"
+
+// Weather location (Open-Meteo API - no key required)
+#define DEFAULT_WEATHER_LATITUDE 50.0755f   // Your latitude
+#define DEFAULT_WEATHER_LONGITUDE 14.4378f  // Your longitude
 ```
-And set your stop ID in `src/config/AppConfig.cpp`.
+Weather is enabled by default on M4. Set your GPS coordinates to show local weather.
 
 ### Option 3: Generic ESP32-S3
 
@@ -174,6 +180,7 @@ The built-in web server provides:
   - Minimum departure time (0-30 minutes) - filter out departures too soon to catch
   - Display brightness (0-255)
   - Custom line colors with position-based wildcard patterns (e.g., "9*" for 2-digit, "4**" for 3-digit)
+  - Weather display settings (enable/disable, GPS coordinates, refresh interval)
   - Debug mode (enables telnet logging on port 23)
 - **Actions**:
   - Force refresh
@@ -216,7 +223,7 @@ The built-in web server provides:
 │ [31] Sídliště Řepy           12' │  Row 1
 │ [7 ] Radlická                 5' │  Row 2
 │ [A ] Depo Hostivař            2' │  Row 3
-│ Mon| Feb 15              14:35    │  Row 4 (Date/Time)
+│ Mon  ☀ -3°               14:35   │  Row 4 (Date/Weather/Time)
 └────────────────────────────────────┘
 ```
 
@@ -268,6 +275,21 @@ These colors are used by default and can be customized via the web interface:
 - **Yellow**: 2-5 minutes
 - **Red**: < 2 minutes
 - **Orange**: Delayed
+
+### Weather Colors
+**Icons** (based on conditions):
+- **Yellow**: Clear sky (sun)
+- **White**: Cloudy/partly cloudy
+- **Purple**: Fog
+- **Cyan**: Rain/drizzle
+- **Blue**: Snow
+- **Red**: Thunderstorm
+
+**Temperature** (based on value):
+- **Red**: > 25°C (hot)
+- **Yellow**: 17-25°C (warm)
+- **White**: 8-16°C (mild)
+- **Blue**: < 8°C (cold)
 
 ## Troubleshooting
 
@@ -342,10 +364,11 @@ For detailed information about the data flow pipeline, memory allocation, and de
 | Captive Portal | ✅ DNSServer | ❌ Not available |
 | Prague API | ✅ Golemio | ✅ Golemio |
 | Berlin API | ✅ BVG | ❌ Excluded |
+| Weather API | ✅ Open-Meteo (HTTPS) | ✅ Open-Meteo (HTTP) |
 | GitHub OTA | ✅ Full support | ❌ Not available |
 | Telnet Logging | ✅ ESPTelnet | ❌ Not available |
-| RAM Usage | ~70KB / 327KB (21%) | ~16KB / 192KB (8%) |
-| Flash Usage | ~1.2MB / 1.3MB (95%) | ~106KB / 508KB (21%) |
+| RAM Usage | ~70KB / 327KB (21%) | ~17KB / 192KB (9%) |
+| Flash Usage | ~1.2MB / 1.3MB (95%) | ~117KB / 508KB (23%) |
 
 ### AP Mode Credentials (ESP32-S3 Only)
 - SSID: `SpojBoard-XXXX` (XXXX = last 4 chars of MAC address)
@@ -412,6 +435,7 @@ See the LICENSE file for full details.
 ## Credits
 
 - [Golemio API](https://api.golemio.cz) - Prague open data platform
+- [Open-Meteo](https://open-meteo.com) - Free weather API (no key required)
 - [ESP32-HUB75-MatrixPanel-DMA](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA) - Display driver
 - [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) - Graphics primitives and font rendering
 - [Adafruit GFX Font Customiser by tchapi](https://tchapi.github.io/Adafruit-GFX-Font-Customiser/)
