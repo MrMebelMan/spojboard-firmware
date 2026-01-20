@@ -467,7 +467,8 @@ Abbreviations are applied in `DepartureData.cpp` before UTF-8 conversion to pres
 - **WiFi**: 2.4GHz only via WiFiNINA library
 - **Display**: 2× HUB75 64×32 panels chained (128×32 total resolution)
 - **Display library**: Adafruit Protomatter (4-bit depth, 4 address pins for 32-row 1:16 scan)
-- **Memory**: 192KB RAM, 496KB Flash (~8% RAM, ~21% Flash used)
+- **Color channels**: Green and blue are swapped compared to ESP32. All RGB565 colors in `DisplayColors.cpp` have G/B components swapped for M4 via `#if defined(MATRIX_PORTAL_M4)`. Use `WEATHER_DEBUG_SCREEN 1` in credentials.h to verify colors.
+- **Memory**: 192KB RAM, 496KB Flash (~9% RAM, ~23% Flash used)
 - **Storage**: FlashStorage_SAMD for persistent config
 - **Web server**: Minimal implementation - only `/on` and `/off` endpoints for screen control
 - **Limitations**:

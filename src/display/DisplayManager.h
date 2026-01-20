@@ -125,6 +125,12 @@ public:
      */
     void turnOn();
 
+    /**
+     * Draw weather debug screen showing all icons and colors
+     * Used to verify color mapping is correct
+     */
+    void drawWeatherDebug();
+
     bool isScreenOff() const { return screenOff; }
     bool needsRedraw() { bool r = forceRedraw; forceRedraw = false; return r; }
 

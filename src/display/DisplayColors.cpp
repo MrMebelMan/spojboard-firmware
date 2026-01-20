@@ -25,20 +25,24 @@ uint16_t COLOR_CYAN;
 void initColors()
 {
     COLOR_WHITE = RGB565(255, 255, 255);
-    COLOR_YELLOW = RGB565(255, 255, 0);
     COLOR_RED = RGB565(255, 0, 0);
+    COLOR_BLACK = RGB565(0, 0, 0);
+    COLOR_CYAN = RGB565(0, 255, 255);  // G=B so swap doesn't matter
+
 #if defined(MATRIX_PORTAL_M4)
-    // M4 Protomatter has green/blue swapped
-    COLOR_GREEN = RGB565(0, 0, 255);
-    COLOR_BLUE = RGB565(0, 255, 0);
+    // M4 Protomatter has green/blue channels swapped - swap G,B in all colors
+    COLOR_YELLOW = RGB565(255, 0, 255);   // Was (255,255,0), swap G/B
+    COLOR_GREEN = RGB565(0, 0, 255);      // Was (0,255,0), swap G/B
+    COLOR_BLUE = RGB565(0, 255, 0);       // Was (0,0,255), swap G/B
+    COLOR_ORANGE = RGB565(255, 0, 100);   // Was (255,100,0), swap G/B - more red for better orange
+    COLOR_PURPLE = RGB565(128, 128, 0);   // Was (128,0,128), swap G/B
 #else
+    COLOR_YELLOW = RGB565(255, 255, 0);
     COLOR_GREEN = RGB565(0, 255, 0);
     COLOR_BLUE = RGB565(0, 0, 255);
-#endif
-    COLOR_ORANGE = RGB565(255, 165, 0);
+    COLOR_ORANGE = RGB565(255, 100, 0);   // More red for better orange
     COLOR_PURPLE = RGB565(128, 0, 128);
-    COLOR_BLACK = RGB565(0, 0, 0);
-    COLOR_CYAN = RGB565(0, 255, 255);
+#endif
 }
 
 // ============================================================================

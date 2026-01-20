@@ -242,10 +242,14 @@ void DisplayManager::drawDeparture(int row, const Departure &dep)
     display->setFont(fontMedium);
     display->setCursor(etaCursor, y + 7);
 
-    // ETA color based on time (red if <= 5 min, white otherwise)
+    // ETA color based on time
     if (dep.eta <= 5)
     {
         display->setTextColor(COLOR_RED);
+    }
+    else if (dep.eta <= 7)
+    {
+        display->setTextColor(COLOR_ORANGE);
     }
     else
     {
@@ -669,4 +673,138 @@ uint16_t DisplayManager::getTemperatureColor(int temperature)
     if (temperature < 8)
         return COLOR_BLUE; // Cold
     return COLOR_WHITE;    // Mild
+}
+
+void DisplayManager::drawWeatherDebug()
+{
+    display->fillScreen(COLOR_BLACK);
+
+    // Row 1: Weather icons with labels (y=7)
+    // Sun(0), Cloud(3), Fog(45), Rain(61), Snow(71), Storm(95)
+    int x = 0;
+    int y = 7;
+
+    display->setFont(fontWeather);
+
+    // Sun - yellow
+    display->setTextColor(getWeatherColor(0));
+    display->setCursor(x, y);
+    display->print(mapWeatherCodeToIcon(0));
+    x += 10;
+
+    // Cloud - white
+    display->setTextColor(getWeatherColor(3));
+    display->setCursor(x, y);
+    display->print(mapWeatherCodeToIcon(3));
+    x += 10;
+
+    // Fog - purple
+    display->setTextColor(getWeatherColor(45));
+    display->setCursor(x, y);
+    display->print(mapWeatherCodeToIcon(45));
+    x += 10;
+
+    // Drizzle - cyan
+    display->setTextColor(getWeatherColor(51));
+    display->setCursor(x, y);
+    display->print(mapWeatherCodeToIcon(51));
+    x += 10;
+
+    // Rain - cyan
+    display->setTextColor(getWeatherColor(61));
+    display->setCursor(x, y);
+    display->print(mapWeatherCodeToIcon(61));
+    x += 10;
+
+    // Snow - blue
+    display->setTextColor(getWeatherColor(71));
+    display->setCursor(x, y);
+    display->print(mapWeatherCodeToIcon(71));
+    x += 10;
+
+    // Storm - red
+    display->setTextColor(getWeatherColor(95));
+    display->setCursor(x, y);
+    display->print(mapWeatherCodeToIcon(95));
+
+    // Row 2: Temperature colors (y=15)
+    y = 15;
+    display->setFont(fontSmall);
+
+    // Hot >25 - red
+    display->setTextColor(getTemperatureColor(30));
+    display->setCursor(0, y);
+    display->print("30");
+
+    // Warm 17-25 - yellow
+    display->setTextColor(getTemperatureColor(20));
+    display->setCursor(20, y);
+    display->print("20");
+
+    // Mild 8-16 - white
+    display->setTextColor(getTemperatureColor(12));
+    display->setCursor(40, y);
+    display->print("12");
+
+    // Cold <8 - blue
+    display->setTextColor(getTemperatureColor(0));
+    display->setCursor(60, y);
+    display->print("0");
+
+    // Freezing - blue
+    display->setTextColor(getTemperatureColor(-5));
+    display->setCursor(80, y);
+    display->print("-5");
+
+    // Row 3: Basic colors (y=23)
+    y = 23;
+    display->setTextColor(COLOR_RED);
+    display->setCursor(0, y);
+    display->print("R");
+
+    display->setTextColor(COLOR_GREEN);
+    display->setCursor(12, y);
+    display->print("G");
+
+    display->setTextColor(COLOR_BLUE);
+    display->setCursor(24, y);
+    display->print("B");
+
+    display->setTextColor(COLOR_YELLOW);
+    display->setCursor(36, y);
+    display->print("Y");
+
+    display->setTextColor(COLOR_CYAN);
+    display->setCursor(48, y);
+    display->print("C");
+
+    display->setTextColor(COLOR_PURPLE);
+    display->setCursor(60, y);
+    display->print("P");
+
+    display->setTextColor(COLOR_ORANGE);
+    display->setCursor(72, y);
+    display->print("O");
+
+    display->setTextColor(COLOR_WHITE);
+    display->setCursor(84, y);
+    display->print("W");
+
+    // Row 4: L/R indicators (y=31)
+    y = 31;
+    display->setTextColor(COLOR_GREEN);
+    display->setCursor(0, y);
+    display->print("R");
+
+    display->setTextColor(COLOR_BLUE);
+    display->setCursor(12, y);
+    display->print("L");
+
+    display->setTextColor(COLOR_WHITE);
+    display->setCursor(30, y);
+    display->print("Weather Debug");
+
+#if defined(MATRIX_PORTAL_M4)
+    display->show();
+#endif
 }

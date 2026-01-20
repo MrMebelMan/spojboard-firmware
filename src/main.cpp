@@ -420,6 +420,12 @@ void setup()
     Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Display ready");
     logMemory("display_init");
 
+#if WEATHER_DEBUG_SCREEN
+    Serial.println("WEATHER DEBUG: Showing debug screen for 10 seconds...");
+    displayManager.drawWeatherDebug();
+    delay(10000);
+#endif
+
     displayManager.drawStatus("Starting SpojBoard...", "FW v" FIRMWARE_RELEASE, COLOR_WHITE);
     Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Connecting WiFi...");
 
