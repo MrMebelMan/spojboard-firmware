@@ -437,7 +437,6 @@ void setup()
     while (!wifiConnected && config.noApFallback)
     {
         displayManager.drawStatus("WiFi Failed!", "Retrying...", COLOR_RED);
-        delay(2000);
         wifiConnected = wifiManager.connectSTA(config, 5, 500);
     }
 
