@@ -14,13 +14,18 @@
 #include "../fonts/DepartureMono4pt8b.h"
 #include "../fonts/DepartureMono5pt8b.h"
 #include "../fonts/DepartureMonoCondensed5pt8b.h"
+#include "../fonts/DepartureWeather4pt8b.h"
+
+// WeatherAPI for data structure
+#include "../api/WeatherAPI.h"
 
 DisplayManager::DisplayManager()
-    : display(nullptr), isDrawing(false), screenOff(false), forceRedraw(false), config(nullptr)
+    : display(nullptr), isDrawing(false), screenOff(false), forceRedraw(false), config(nullptr), weatherData(nullptr)
 {
     fontSmall = &DepartureMono_Regular4pt8b;
     fontMedium = &DepartureMono_Regular5pt8b;
     fontCondensed = &DepartureMono_Condensed5pt8b;
+    fontWeather = &DepartureWeather_Regular4pt8b;
     ipStringBuffer[0] = '\0';
 }
 
@@ -299,6 +304,48 @@ void DisplayManager::drawDateTime()
     display->setCursor(21, y + 7);
     display->print(dateStr);
 
+    // Weather (only if enabled and valid data)
+    if (config && config->weatherEnabled && weatherData && !weatherData->hasError)
+    {
+        time_t now;
+        time(&now);
+
+        // Only show if data is fresh (< 30 min old)
+        if (difftime(now, weatherData->timestamp) < 1800)
+        {
+            // Switch to weather font
+            display->setFont(fontWeather);
+
+            // Get icon character and color for this weather code
+            char iconCode = mapWeatherCodeToIcon(weatherData->weatherCode);
+            uint16_t iconColor = getWeatherColor(weatherData->weatherCode);
+
+            // Draw icon at fixed left position (X=65, panel 2 start)
+            display->setTextColor(iconColor);
+            display->setCursor(65, y + 7);
+            display->print(iconCode); // Letter 'a'-'t' renders as weather icon
+
+            // Draw temperature right-aligned to degree symbol at X=93
+            // with its own color
+            display->setTextColor(getTemperatureColor(weatherData->temperature));
+            char tempStr[8];
+            snprintf(tempStr, sizeof(tempStr), "%d\xB0", weatherData->temperature);
+
+            // Calculate text width and right-align to degree anchor (X=93)
+            int16_t x1, y1;
+            uint16_t w, h;
+            display->getTextBounds(tempStr, 0, 0, &x1, &y1, &w, &h);
+            int tempX = 88 - w + x1; // Right-align to X=93, compensate for x1 offset
+
+            display->setCursor(tempX, y + 7);
+            display->print(tempStr); // Temperature with degree symbol
+
+            // Switch back to small font for time display
+            display->setFont(fontSmall);
+            display->setTextColor(COLOR_WHITE);
+        }
+    }
+
     // Time
     char timeStr[6];
     strftime(timeStr, 6, "%H:%M", &timeinfo);
@@ -568,4 +615,58 @@ void DisplayManager::drawDemo(const Departure* departures, int departureCount, c
 #endif
 
     isDrawing = false;
+}
+
+// ============================================================================
+// Weather Helper Functions
+// ============================================================================
+
+char DisplayManager::mapWeatherCodeToIcon(int wmoCode)
+{
+    // Map WMO weather codes to weather font characters
+    // WMO codes: https://www.noaa.gov/weather
+    if (wmoCode == 0)
+        return 'a'; // Clear sky -> sun
+    if (wmoCode <= 3)
+        return 'b'; // Partly cloudy/cloudy
+    if (wmoCode >= 45 && wmoCode <= 48)
+        return 'f'; // Fog
+    if (wmoCode >= 51 && wmoCode <= 57)
+        return 'g'; // Drizzle/light rain
+    if (wmoCode >= 61 && wmoCode <= 67)
+        return 'd'; // Rain
+    if (wmoCode >= 71 && wmoCode <= 86)
+        return 'e'; // Snow/sleet
+    if (wmoCode >= 95)
+        return 't'; // Thunderstorm
+    return 'c';     // Default: cloudy
+}
+
+uint16_t DisplayManager::getWeatherColor(int wmoCode)
+{
+    // Color coding by weather condition
+    if (wmoCode == 0)
+        return COLOR_YELLOW; // Sunny
+    if (wmoCode <= 3)
+        return COLOR_WHITE; // Cloudy
+    if (wmoCode >= 45 && wmoCode <= 48)
+        return COLOR_PURPLE; // Fog
+    if (wmoCode >= 51 && wmoCode <= 67)
+        return COLOR_CYAN; // Drizzle/Rain
+    if (wmoCode >= 71 && wmoCode <= 86)
+        return COLOR_BLUE; // Snow
+    if (wmoCode >= 95)
+        return COLOR_RED; // Thunderstorm
+    return COLOR_WHITE;   // Default
+}
+
+uint16_t DisplayManager::getTemperatureColor(int temperature)
+{
+    if (temperature > 25)
+        return COLOR_RED; // Hot
+    if (temperature > 16)
+        return COLOR_YELLOW; // Warm
+    if (temperature < 8)
+        return COLOR_BLUE; // Cold
+    return COLOR_WHITE;    // Mild
 }

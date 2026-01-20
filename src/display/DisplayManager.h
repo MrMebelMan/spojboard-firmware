@@ -19,6 +19,10 @@
 extern const GFXfont DepartureMono_Regular4pt8b;
 extern const GFXfont DepartureMono_Regular5pt8b;
 extern const GFXfont DepartureMono_Condensed5pt8b;
+extern const GFXfont DepartureWeather_Regular4pt8b;  // Weather icon font
+
+// Forward declaration for WeatherData
+struct WeatherData;
 
 // ============================================================================
 // Display Manager Class
@@ -87,6 +91,12 @@ public:
     void setConfig(const Config* cfg) { config = cfg; }
 
     /**
+     * Set weather data pointer for display rendering
+     * @param data Pointer to WeatherData struct
+     */
+    void setWeatherData(const WeatherData* data) { weatherData = data; }
+
+    /**
      * Get pointer to display object (for direct access if needed)
      */
     DisplayType* getDisplay() { return display; }
@@ -129,12 +139,21 @@ private:
     const GFXfont* fontSmall;
     const GFXfont* fontMedium;
     const GFXfont* fontCondensed;
+    const GFXfont* fontWeather;  // Weather icon font
+
+    // Weather data pointer
+    const WeatherData* weatherData;
 
     // Drawing functions
     void drawDeparture(int row, const Departure& dep);
     void drawDateTime();
     void drawErrorBar(const char* errorMsg);
     void drawAPMode(const char* ssid, const char* password);
+
+    // Weather helper functions
+    char mapWeatherCodeToIcon(int wmoCode);
+    uint16_t getWeatherColor(int wmoCode);
+    uint16_t getTemperatureColor(int temperature);
 };
 
 #endif // DISPLAYMANAGER_H

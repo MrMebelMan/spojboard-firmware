@@ -75,6 +75,13 @@ struct Config
     char city[16];          // Transit city: "Prague" or "Berlin"
     bool debugMode;         // Enable telnet logging and verbose output
     bool noApFallback;      // If true, keep retrying WiFi instead of falling back to AP mode
+
+    // Weather configuration
+    bool weatherEnabled;        // Enable weather display
+    float weatherLatitude;      // GPS latitude (e.g., 50.0755 for Prague)
+    float weatherLongitude;     // GPS longitude (e.g., 14.4378 for Prague)
+    int weatherRefreshInterval; // Minutes between weather fetches (default: 15)
+
     bool configured;
 };
 

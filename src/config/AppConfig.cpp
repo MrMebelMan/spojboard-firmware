@@ -15,7 +15,8 @@
 // ============================================================================
 
 // Storage signature for validation
-#define CONFIG_SIGNATURE 0x53504F4A  // "SPOJ" in hex
+// Bump this value to invalidate stored configs and force fresh defaults
+#define CONFIG_SIGNATURE 0x53504F4B  // Bumped to add weather fields
 
 struct StoredConfig {
     uint32_t signature;
@@ -46,6 +47,11 @@ void loadConfig(Config& config)
         config.brightness = 45;
         config.debugMode = false;
         config.noApFallback = true;
+        // Weather defaults - enabled by default on M4 since there's no web UI
+        config.weatherEnabled = true;
+        config.weatherLatitude = DEFAULT_WEATHER_LATITUDE;
+        config.weatherLongitude = DEFAULT_WEATHER_LONGITUDE;
+        config.weatherRefreshInterval = 15;
         config.configured = true;  // Mark as configured since we have hardcoded credentials
 
         Serial.println("Config: No valid data found, using defaults");
@@ -54,6 +60,17 @@ void loadConfig(Config& config)
     {
         // Copy stored config
         memcpy(&config, &stored.config, sizeof(Config));
+
+        // Migration: Initialize weather fields if they appear unset (added in later firmware)
+        // Weather latitude/longitude of 0,0 is in the ocean, so treat as uninitialized
+        if (config.weatherLatitude == 0.0f && config.weatherLongitude == 0.0f)
+        {
+            config.weatherEnabled = true;  // Enable by default on M4
+            config.weatherLatitude = DEFAULT_WEATHER_LATITUDE;
+            config.weatherLongitude = DEFAULT_WEATHER_LONGITUDE;
+            config.weatherRefreshInterval = 15;
+            Serial.println("Config: Migrated weather settings from defaults");
+        }
     }
 
     // Log loaded config
@@ -72,6 +89,13 @@ void loadConfig(Config& config)
     Serial.print("  Refresh: ");
     Serial.print(config.refreshInterval);
     Serial.println("s");
+    Serial.print("  Weather: ");
+    Serial.print(config.weatherEnabled ? "Enabled" : "Disabled");
+    Serial.print(" (");
+    Serial.print(config.weatherLatitude, 4);
+    Serial.print(", ");
+    Serial.print(config.weatherLongitude, 4);
+    Serial.println(")");
     Serial.print("  Configured: ");
     Serial.println(config.configured ? "Yes" : "No");
 }
@@ -154,6 +178,13 @@ void loadConfig(Config& config)
     strlcpy(config.city, preferences.getString("city", "Prague").c_str(), sizeof(config.city));  // Default: Prague for backward compatibility
     config.debugMode = preferences.getBool("debugMode", false);  // Default: disabled
     config.noApFallback = preferences.getBool("noApFallback", true);  // Default: keep retrying WiFi
+
+    // Load weather configuration
+    config.weatherEnabled = preferences.getBool("weatherEnable", false);  // Default: disabled
+    config.weatherLatitude = preferences.getFloat("weatherLat", DEFAULT_WEATHER_LATITUDE);
+    config.weatherLongitude = preferences.getFloat("weatherLon", DEFAULT_WEATHER_LONGITUDE);
+    config.weatherRefreshInterval = preferences.getInt("weatherRefresh", 15);  // Default: 15 minutes
+
     config.configured = preferences.getBool("configured", false);
 
     preferences.end();
@@ -209,6 +240,13 @@ void saveConfig(const Config& config)
     preferences.putString("city", config.city);
     preferences.putBool("debugMode", config.debugMode);
     preferences.putBool("noApFallback", config.noApFallback);
+
+    // Save weather configuration
+    preferences.putBool("weatherEnable", config.weatherEnabled);
+    preferences.putFloat("weatherLat", config.weatherLatitude);
+    preferences.putFloat("weatherLon", config.weatherLongitude);
+    preferences.putInt("weatherRefresh", config.weatherRefreshInterval);
+
     preferences.putBool("configured", true);
 
     preferences.end();

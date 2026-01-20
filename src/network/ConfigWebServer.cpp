@@ -395,6 +395,30 @@ void ConfigWebServer::handleRoot()
     html += "<div style='margin-top:10px;'><label><input type='checkbox' name='debugmode' " + String(currentConfig->debugMode ? "checked" : "") + "> Enable Debug Mode (Telnet on port 23)</label></div>";
     html += "</div>";
 
+    // Weather section (only show when not in AP mode)
+    if (!apModeActive)
+    {
+        html += "<div class='card'>";
+        html += "<h2>Weather Display</h2>";
+        html += "<p class='info'>Show current weather conditions in the status bar. Uses Open-Meteo API (free, no key required).</p>";
+
+        html += "<div style='margin-bottom:15px;'><label><input type='checkbox' name='weather_enabled' " + String(currentConfig->weatherEnabled ? "checked" : "") + "> Enable Weather Display</label></div>";
+
+        html += "<div class='grid'>";
+        html += "<div><label>Latitude</label>";
+        html += "<input type='text' name='weather_lat' value='" + String(currentConfig->weatherLatitude, 6) + "' placeholder='e.g. 50.0755'></div>";
+
+        html += "<div><label>Longitude</label>";
+        html += "<input type='text' name='weather_lon' value='" + String(currentConfig->weatherLongitude, 6) + "' placeholder='e.g. 14.4378'></div>";
+        html += "</div>";
+
+        html += "<div><label>Refresh Interval (minutes)</label>";
+        html += "<input type='number' name='weather_refresh' value='" + String(currentConfig->weatherRefreshInterval) + "' min='10' max='60'></div>";
+
+        html += "<p class='info' style='font-size:0.9em; margin-top:10px;'>Find your coordinates at <a href='https://www.latlong.net/' target='_blank'>latlong.net</a></p>";
+        html += "</div>";
+    }
+
     // Line Colors section (only show when not in AP mode)
     if (!apModeActive)
     {
@@ -918,6 +942,45 @@ void ConfigWebServer::handleSave()
 
     // Debug mode checkbox (unchecked = not present in POST data)
     newConfig.debugMode = server->hasArg("debugmode");
+
+    // Weather configuration
+    newConfig.weatherEnabled = server->hasArg("weather_enabled");
+
+    if (server->hasArg("weather_lat"))
+    {
+        String latStr = server->arg("weather_lat");
+        // Replace comma with dot for decimal separator (locale compatibility)
+        latStr.replace(",", ".");
+        newConfig.weatherLatitude = latStr.toFloat();
+        // Validate latitude range
+        if (newConfig.weatherLatitude < -90.0f)
+            newConfig.weatherLatitude = -90.0f;
+        if (newConfig.weatherLatitude > 90.0f)
+            newConfig.weatherLatitude = 90.0f;
+    }
+
+    if (server->hasArg("weather_lon"))
+    {
+        String lonStr = server->arg("weather_lon");
+        // Replace comma with dot for decimal separator (locale compatibility)
+        lonStr.replace(",", ".");
+        newConfig.weatherLongitude = lonStr.toFloat();
+        // Validate longitude range
+        if (newConfig.weatherLongitude < -180.0f)
+            newConfig.weatherLongitude = -180.0f;
+        if (newConfig.weatherLongitude > 180.0f)
+            newConfig.weatherLongitude = 180.0f;
+    }
+
+    if (server->hasArg("weather_refresh"))
+    {
+        newConfig.weatherRefreshInterval = server->arg("weather_refresh").toInt();
+        // Clamp to 10-60 minutes
+        if (newConfig.weatherRefreshInterval < 10)
+            newConfig.weatherRefreshInterval = 10;
+        if (newConfig.weatherRefreshInterval > 60)
+            newConfig.weatherRefreshInterval = 60;
+    }
 
     // Line color map (always update when not in AP mode to handle empty case)
     if (!apModeActive)

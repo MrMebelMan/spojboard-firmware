@@ -8,6 +8,7 @@
 #include "config/AppConfig.h"
 #include "api/DepartureData.h"
 #include "api/GolemioAPI.h"
+#include "api/WeatherAPI.h"
 #if !defined(MATRIX_PORTAL_M4)
 #include "api/BvgAPI.h"
 #endif
@@ -35,6 +36,7 @@ WiFiManager wifiManager;
 CaptivePortal captivePortal;
 ConfigWebServer webServer;
 GolemioAPI golemioAPI;  // Prague transit API
+WeatherAPI weatherAPI;  // Weather forecast API
 #if !defined(MATRIX_PORTAL_M4)
 BvgAPI bvgAPI;          // Berlin transit API
 #endif
@@ -57,11 +59,13 @@ int departureCount = 0;
 unsigned long lastApiCall = 0;
 unsigned long lastDisplayUpdate = 0;
 unsigned long lastEtaRecalc = 0;  // For 10-second ETA recalculation
+unsigned long lastWeatherCall = 0;  // For weather API polling
 bool needsDisplayUpdate = false;
 bool apiError = false;
 char apiErrorMsg[64] = "";
 char stopName[64] = "";
 bool demoModeActive = false;  // Demo mode flag - stops API polling and display updates
+WeatherData weatherData = {0, 0, 0, true, ""};  // Initialize with hasError=true until first successful fetch
 
 // Network layer is now in network/ modules:
 // - WiFiManager: WiFi connection and AP mode
@@ -223,6 +227,42 @@ bool isCityConfigured()
 }
 
 // ============================================================================
+// Weather API Fetch Wrapper
+// ============================================================================
+void fetchWeather()
+{
+    if (!wifiManager.isConnected() || !config.weatherEnabled)
+    {
+        return;
+    }
+
+    // Validate coordinates
+    if (config.weatherLatitude == 0.0 && config.weatherLongitude == 0.0)
+    {
+        return;
+    }
+
+    logTimestamp();
+    debugPrintln("Weather: Fetching forecast...");
+
+    weatherData = weatherAPI.fetchWeather(config.weatherLatitude, config.weatherLongitude);
+
+    if (weatherData.hasError)
+    {
+        logTimestamp();
+        debugPrint("Weather: Error - ");
+        debugPrintln(weatherData.errorMsg);
+    }
+    else
+    {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Weather: %d°C, code %d", weatherData.temperature, weatherData.weatherCode);
+        logTimestamp();
+        debugPrintln(msg);
+    }
+}
+
+// ============================================================================
 // API Fetch Wrapper - Uses TransitAPI interface (GolemioAPI or BvgAPI)
 // ============================================================================
 void fetchDepartures()
@@ -376,6 +416,7 @@ void setup()
         return;
     }
     displayManager.setConfig(&config);
+    displayManager.setWeatherData(&weatherData);  // Pass weather data pointer to display manager
     Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Display ready");
     logMemory("display_init");
 
@@ -482,6 +523,15 @@ void setup()
             fetchDepartures();
             Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Initial fetch complete");
             lastApiCall = millis(); // Prevent immediate second call in loop()
+        }
+
+        // Initial weather call if configured
+        if (config.weatherEnabled && config.weatherLatitude != 0.0 && config.weatherLongitude != 0.0)
+        {
+            Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Fetching initial weather...");
+            fetchWeather();
+            Serial.print("["); Serial.print(millis()); Serial.println("] BOOT: Weather fetch complete");
+            lastWeatherCall = millis();
         }
     }
 
@@ -591,6 +641,21 @@ void loop()
             {
                 lastEtaRecalc = now;
                 recalculateETAs();
+            }
+        }
+
+        // Periodic weather calls (only when connected and enabled)
+        if (wifiManager.isConnected() && config.weatherEnabled &&
+            config.weatherLatitude != 0.0 && config.weatherLongitude != 0.0)
+        {
+            unsigned long now = millis();
+            unsigned long weatherInterval = (unsigned long)config.weatherRefreshInterval * 60000; // Minutes to ms
+
+            if (now - lastWeatherCall >= weatherInterval || lastWeatherCall == 0)
+            {
+                lastWeatherCall = now;
+                fetchWeather();
+                needsDisplayUpdate = true;
             }
         }
     }
