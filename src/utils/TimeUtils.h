@@ -11,8 +11,9 @@
 #define NTP_SERVER "pool.ntp.org"
 
 // Timezone: CET/CEST (Prague)
-#define GMT_OFFSET_SEC 3600      // CET = UTC+1
-#define DAYLIGHT_OFFSET_SEC 3600 // CEST = UTC+2
+// POSIX string encodes the transition rules: last Sun of March → last Sun of October
+#define TZ_POSIX "CET-1CEST,M3.5.0,M10.5.0/3"
+#define GMT_OFFSET_SEC 3600      // CET = UTC+1 (used by M4 NTPClient as base)
 
 // ============================================================================
 // Time Synchronization Functions
