@@ -600,18 +600,38 @@ void loop()
     bool isConnected = wifiManager.isConnected();
     static bool wasConnected = isConnected; // Initialize to current state on first call
 
+    static const unsigned long RECONNECT_DELAY_MIN_MS = 10000;
+    static const unsigned long RECONNECT_DELAY_MAX_MS = 60000;
+    static const unsigned long OFFLINE_REBOOT_MS = 5UL * 60 * 1000;
+    static unsigned long disconnectedSince = 0;
+    static unsigned long lastReconnectAttempt = 0;
+    static unsigned long reconnectDelay = RECONNECT_DELAY_MIN_MS;
+
     if (!isConnected && wasConnected)
     {
         logTimestamp();
         debugPrintln("WiFi: Disconnected!");
         needsDisplayUpdate = true;
+        disconnectedSince = millis();
+        lastReconnectAttempt = millis();
+        reconnectDelay = RECONNECT_DELAY_MIN_MS;
+    }
 
-        // Attempt reconnection
-        static unsigned long lastReconnectAttempt = 0;
-        if (millis() - lastReconnectAttempt > 30000)
+    if (!isConnected)
+    {
+        if (millis() - disconnectedSince >= OFFLINE_REBOOT_MS)
+        {
+            logTimestamp();
+            debugPrintln("WiFi: Offline for 5 min, rebooting...");
+            delay(100);
+            systemRestart();
+        }
+
+        if (millis() - lastReconnectAttempt >= reconnectDelay)
         {
             lastReconnectAttempt = millis();
-            wifiManager.attemptReconnect();
+            wifiManager.attemptReconnect(config);
+            reconnectDelay = min(reconnectDelay * 2, RECONNECT_DELAY_MAX_MS);
         }
     }
     else if (isConnected && !wasConnected)

@@ -50,6 +50,10 @@ bool WiFiManager::connectSTA(const Config& config, int maxAttempts, int delayMs)
 
     if (WiFi.status() == WL_CONNECTED)
     {
+#if !defined(MATRIX_PORTAL_M4)
+        // Modem power save adds latency and causes dropped connections
+        WiFi.setSleep(false);
+#endif
         IPAddress ip = WiFi.localIP();
         snprintf(msg, sizeof(msg), "\nWiFi: Connected! IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
         logTimestamp();
@@ -169,20 +173,15 @@ int WiFiManager::getAPClientCount() const
 #endif
 }
 
-void WiFiManager::attemptReconnect()
+void WiFiManager::attemptReconnect(const Config& config)
 {
     if (!apModeActive && WiFi.status() != WL_CONNECTED)
     {
         logTimestamp();
         debugPrintln("WiFi: Attempting reconnection...");
-#if defined(MATRIX_PORTAL_M4)
-        // WiFiNINA - need to disconnect and reconnect
-        // Note: This requires stored credentials
         WiFi.disconnect();
         delay(100);
-#else
-        WiFi.reconnect();
-#endif
+        WiFi.begin(config.wifiSsid, config.wifiPassword);
     }
 }
 

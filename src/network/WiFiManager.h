@@ -75,8 +75,9 @@ public:
 
     /**
      * Attempt to reconnect to WiFi (call periodically if disconnected)
+     * @param config Configuration with WiFi credentials
      */
-    void attemptReconnect();
+    void attemptReconnect(const Config& config);
 
 private:
     bool apModeActive;

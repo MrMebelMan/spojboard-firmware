@@ -146,7 +146,8 @@ Transitions:
   - If `noApFallback=false`: Fail → AP mode
   - If `noApFallback=true`: Fail → Retry indefinitely every 2s (never enters AP mode)
 - AP mode + config save → Restart → Try STA mode
-- STA mode connection loss → Auto-reconnect attempts every 30s
+- STA mode connection loss → Reconnect (`WiFi.begin`) with backoff 10s, 20s, 40s, then every 60s; reboot after 5 min offline
+- ESP32 modem power save is disabled after connect (`WiFi.setSleep(false)`) to reduce latency and drops
 - Demo start → Set demoModeActive=true, stop API polling
 - Demo stop → Set demoModeActive=false, resume normal operation
 
