@@ -44,6 +44,7 @@ private:
     static constexpr int JSON_BUFFER_SIZE = 2048;  // 2KB buffer for Open-Meteo response
 #if defined(MATRIX_PORTAL_M4)
     static constexpr int HTTP_TIMEOUT_MS = 60000;  // 60 second timeout (M4's WiFiNINA SSL is slow)
+    static constexpr unsigned long BODY_IDLE_TIMEOUT_MS = 10000;  // Max gap between body bytes
 #else
     static constexpr int HTTP_TIMEOUT_MS = 8000;   // 8 second timeout for ESP32
 #endif

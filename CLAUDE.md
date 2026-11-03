@@ -300,26 +300,8 @@ api->setPartialResultsCallback(onPartialResults);
 - HTTP timeout: 60 seconds (required for M4's slow WiFiNINA + SSL handshake)
 - Find IDs at: https://data.pid.cz/stops/json/stops.json
 
-**M4 Response Body Optimization:**
-On Matrix Portal M4, the default `http.responseBody()` from ArduinoHttpClient reads one character at a time, causing ~10-20 second delays for ~5KB responses. The implementation uses chunked reading with pre-allocation for 4-10x faster body parsing:
-
-```cpp
-// Pre-allocate based on Content-Length
-int contentLen = http.contentLength();
-if (contentLen > 0 && contentLen < JSON_BUFFER_SIZE) {
-    payload.reserve(contentLen + 1);
-}
-
-// Read in 512-byte chunks (much faster than character-by-character)
-char buffer[512];
-while (http.available()) {
-    int bytesRead = http.read((uint8_t*)buffer, sizeof(buffer) - 1);
-    if (bytesRead > 0) {
-        buffer[bytesRead] = '\0';
-        payload += buffer;
-    }
-}
-```
+**M4 Response Body Reading:**
+`http.responseBody()` from ArduinoHttpClient reads one character at a time (~10-20 s for ~5KB), and `HttpClient::read(buf, size)` ignores chunk framing. Golemio and Open-Meteo both reply with `Transfer-Encoding: chunked`. `readHttpBody()` in `src/utils/HttpBody.{h,cpp}` reads raw 512-byte blocks from the underlying client until the body is complete (Content-Length reached or final zero-size chunk), decodes chunks, and gives up after `BODY_IDLE_TIMEOUT_MS` (10 s) without data. An incomplete body is reported as `HTTP_ERROR_BODY_INCOMPLETE` (-100) and retried like other HTTP errors.
 
 ### BVG API (Berlin)
 - Endpoint: `https://v6.bvg.transport.rest/stops/{stopId}/departures`
@@ -425,6 +407,8 @@ http.stop();  // Ensure cleanup after all attempts
 
 **Error Display:**
 - API errors shown in status bar ("ERR: [message]") while keeping departures visible
+- When every stop fails, the bar shows the last stop's real failure (`HTTP 429`, `TIMED_OUT`, `JSON IncompleteInput`, ...); "No departures" only when the API answered with none
+- A fully failed fetch keeps the cached departures; `recalculateETAs()` drops them as they depart
 - No full-screen "Retry X/3" messages during retry attempts
 - Previous departures remain on screen during API failures
 

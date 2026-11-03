@@ -41,9 +41,11 @@ public:
 private:
     APIStatusCallback statusCallback;
     APIPartialResultsCallback partialResultsCallback;
+    char lastStopError[64];  // Reason the most recent failed stop query failed
     static constexpr int MAX_TEMP_DEPARTURES = MAX_DEPARTURES * 12;  // Buffer for up to 12 stops at full capacity
     static constexpr int JSON_BUFFER_SIZE = 12288;  // 12KB - handles busy stops with many departures
     static constexpr int HTTP_TIMEOUT_MS = 60000;  // 60s - M4's WiFiNINA + SSL is slow
+    static constexpr unsigned long BODY_IDLE_TIMEOUT_MS = 10000;  // Max gap between body bytes (M4)
 
     /**
      * Query a single stop and add results to temp array

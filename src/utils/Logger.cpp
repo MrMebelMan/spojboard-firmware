@@ -5,6 +5,7 @@
 // Platform-specific includes for network diagnostics
 #if defined(MATRIX_PORTAL_M4)
     #include <WiFiNINA.h>
+    #include "HttpBody.h"
 #else
     #include <WiFi.h>
     #include <HTTPClient.h>
@@ -107,7 +108,7 @@ const char* httpErrorToString(int httpCode)
         }
     }
 
-    // Negative codes are ESP32 HTTPClient error codes
+    // Negative codes are HTTP client library error codes
 #if !defined(MATRIX_PORTAL_M4)
     switch (httpCode)
     {
@@ -125,7 +126,15 @@ const char* httpErrorToString(int httpCode)
         default: return "UNKNOWN_ERROR";
     }
 #else
-    return "ERROR";
+    switch (httpCode)
+    {
+        case HTTP_ERROR_CONNECTION_FAILED: return "CONNECTION_FAILED";
+        case HTTP_ERROR_API: return "API_ERROR";
+        case HTTP_ERROR_TIMED_OUT: return "TIMED_OUT";
+        case HTTP_ERROR_INVALID_RESPONSE: return "INVALID_RESPONSE";
+        case HTTP_ERROR_BODY_INCOMPLETE: return "BODY_INCOMPLETE";
+        default: return "UNKNOWN_ERROR";
+    }
 #endif
 }
 

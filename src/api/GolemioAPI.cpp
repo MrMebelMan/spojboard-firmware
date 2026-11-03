@@ -33,12 +33,14 @@ static bool parseISO8601(const char* timestamp, struct tm* tm)
 #if defined(MATRIX_PORTAL_M4)
     #include <WiFiNINA.h>
     #include <ArduinoHttpClient.h>
+    #include "../utils/HttpBody.h"
 #else
     #include <HTTPClient.h>
 #endif
 
 GolemioAPI::GolemioAPI() : statusCallback(nullptr), partialResultsCallback(nullptr)
 {
+    lastStopError[0] = '\0';
 }
 
 void GolemioAPI::setStatusCallback(APIStatusCallback callback)
@@ -80,6 +82,7 @@ TransitAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
     char stopIdsCopy[128];
     strlcpy(stopIdsCopy, config.pragueStopIds, sizeof(stopIdsCopy));
 
+    lastStopError[0] = '\0';
     char *stopId = strtok(stopIdsCopy, ",");
     bool firstStop = true;
     int stopIndex = 0;
@@ -157,11 +160,11 @@ TransitAPI::APIResult GolemioAPI::fetchDepartures(const Config &config)
     logTimestamp();
     debugPrintln(filterMsg);
 
-    // Set error status if no departures found
+    // Set error status if no departures found, keeping the real failure reason
     if (tempCount == 0)
     {
         result.hasError = true;
-        strlcpy(result.errorMsg, "No departures", sizeof(result.errorMsg));
+        strlcpy(result.errorMsg, lastStopError[0] ? lastStopError : "No departures", sizeof(result.errorMsg));
     }
 
     logMemory("api_complete");
@@ -235,33 +238,22 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
             logTimestamp();
             debugPrintln("API: Reading response body...");
 
-            // Get content length and pre-allocate (much faster than growing String)
-            int contentLen = http.contentLength();
-            if (contentLen > 0 && contentLen < JSON_BUFFER_SIZE)
-            {
-                payload.reserve(contentLen + 1);
-            }
-
-            // Read in chunks (much faster than responseBody()'s character-by-character)
-            char buffer[512];
-            while (http.available())
-            {
-                int bytesRead = http.read((uint8_t *)buffer, sizeof(buffer) - 1);
-                if (bytesRead > 0)
-                {
-                    buffer[bytesRead] = '\0';
-                    payload += buffer;
-                }
-            }
+            bool bodyComplete = readHttpBody(http, sslClient, payload, BODY_IDLE_TIMEOUT_MS);
 
             // Close connection to free socket
             http.stop();
 
             logTimestamp();
             char bodyMsg[64];
-            snprintf(bodyMsg, sizeof(bodyMsg), "API: Response body length: %d", payload.length());
+            snprintf(bodyMsg, sizeof(bodyMsg), "API: Response body length: %d%s", payload.length(),
+                     bodyComplete ? "" : " (incomplete)");
             debugPrintln(bodyMsg);
-            break;
+
+            if (bodyComplete)
+                break;
+
+            payload = "";
+            httpCode = HTTP_ERROR_BODY_INCOMPLETE;
         }
 
         // Close connection before retry to free socket (CRITICAL for M4 socket pool)
@@ -366,6 +358,7 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
             snprintf(jsonErrMsg, sizeof(jsonErrMsg), "JSON Parse Error for stop %s: %s", stopId, error.c_str());
             logTimestamp();
             debugPrintln(jsonErrMsg);
+            snprintf(lastStopError, sizeof(lastStopError), "JSON %s", error.c_str());
 #if !defined(MATRIX_PORTAL_M4)
             http.end();
 #endif
@@ -410,6 +403,10 @@ bool GolemioAPI::querySingleStop(const char *stopId, const Config &config,
                  MAX_RETRIES, stopId, httpCode);
         logTimestamp();
         debugPrintln(failMsg);
+        if (httpCode > 0)
+            snprintf(lastStopError, sizeof(lastStopError), "HTTP %d", httpCode);
+        else
+            strlcpy(lastStopError, httpErrorToString(httpCode), sizeof(lastStopError));
 #if !defined(MATRIX_PORTAL_M4)
         http.end();
 #endif

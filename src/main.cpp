@@ -275,14 +275,17 @@ void fetchDepartures()
     // Call API client
     TransitAPI::APIResult result = transitAPI->fetchDepartures(config);
 
-    // Update global state with results
-    departureCount = result.departureCount;
-    for (int i = 0; i < result.departureCount; i++)
+    // On a failed fetch keep the cached departures; recalculateETAs() drops them as they leave
+    if (!result.hasError || result.departureCount > 0)
     {
-        departures[i] = result.departures[i];
-    }
+        departureCount = result.departureCount;
+        for (int i = 0; i < result.departureCount; i++)
+        {
+            departures[i] = result.departures[i];
+        }
 
-    strlcpy(stopName, result.stopName, sizeof(stopName));
+        strlcpy(stopName, result.stopName, sizeof(stopName));
+    }
 
     apiError = result.hasError;
     if (result.hasError)

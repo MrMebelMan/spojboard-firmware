@@ -6,6 +6,7 @@
 #if defined(MATRIX_PORTAL_M4)
     #include <WiFiNINA.h>
     #include <ArduinoHttpClient.h>
+    #include "../utils/HttpBody.h"
 #else
     #include <HTTPClient.h>
 #endif
@@ -92,33 +93,22 @@ WeatherData WeatherAPI::fetchWeather(float latitude, float longitude)
             logTimestamp();
             debugPrintln("Weather: Reading response body...");
 
-            // Get content length and pre-allocate
-            int contentLen = http.contentLength();
-            if (contentLen > 0 && contentLen < JSON_BUFFER_SIZE)
-            {
-                payload.reserve(contentLen + 1);
-            }
-
-            // Read in chunks (much faster than responseBody()'s character-by-character)
-            char buffer[512];
-            while (http.available())
-            {
-                int bytesRead = http.read((uint8_t *)buffer, sizeof(buffer) - 1);
-                if (bytesRead > 0)
-                {
-                    buffer[bytesRead] = '\0';
-                    payload += buffer;
-                }
-            }
+            bool bodyComplete = readHttpBody(http, client, payload, BODY_IDLE_TIMEOUT_MS);
 
             // Close connection to free socket
             http.stop();
 
             logTimestamp();
             char bodyMsg[64];
-            snprintf(bodyMsg, sizeof(bodyMsg), "Weather: Response body length: %d", payload.length());
+            snprintf(bodyMsg, sizeof(bodyMsg), "Weather: Response body length: %d%s", payload.length(),
+                     bodyComplete ? "" : " (incomplete)");
             debugPrintln(bodyMsg);
-            break;
+
+            if (bodyComplete)
+                break;
+
+            payload = "";
+            httpCode = HTTP_ERROR_BODY_INCOMPLETE;
         }
 
         // Close connection before retry to free socket
